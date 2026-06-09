@@ -8,8 +8,14 @@ import type { CSSProperties, ReactNode } from 'react'
 import type { CellCommit, EditStatus } from './editing'
 import type { ColumnId, RowId } from './ids'
 
-/** Built-in cell kinds. Undefined => text (value coerced to string). Anything else is custom. */
-export type CellType = 'text' | 'select'
+/**
+ * Built-in cell kinds. Undefined => text (value coerced to string).
+ * - `text` / `select` pick the default editor.
+ * - `action` marks a non-data column (e.g. a row-action button via `renderRead`): its cells are
+ *   NON-selectable (pointer + keyboard skip them) and non-editable, so interactive content inside
+ *   handles its own clicks without the consumer wiring stopPropagation/preventDefault.
+ */
+export type CellType = 'text' | 'select' | 'action'
 
 /** Frozen zone (D5). Omit => center (horizontally scrolling) zone. */
 export type FrozenZone = 'left' | 'right'
@@ -37,6 +43,9 @@ export interface CellEditContext<T> extends CellRenderContext<T> {
   cancel: () => void
   status: EditStatus
   error?: unknown
+  /** The cell's width/height in px — so a custom editor can fill the cell (e.g. `width: ctx.width`). */
+  width: number
+  height: number
 }
 
 /**

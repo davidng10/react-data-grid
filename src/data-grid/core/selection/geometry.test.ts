@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { stepCoord, rangeToZoneRects, cellToZoneRect } from './geometry'
-import type { ColumnPlacement, GridGeometry } from './geometry'
+import { stepCoord, rangeToZoneRects, cellToZoneRect, cellViewportRect } from './geometry'
+import type { ColumnPlacement, GridGeometry, ViewportInfo } from './geometry'
 
 // A fixture grid: 1 frozen-left col, 3 center cols, 1 frozen-right col.
 //   visual order: L0 | C0 C1 C2 | R0
@@ -48,6 +48,28 @@ describe('stepCoord', () => {
   it('toEdge jumps to the first/last column (R6)', () => {
     expect(stepCoord({ rowIndex: 0, columnId: 'C1' }, 'left', geom, true).columnId).toBe('L0')
     expect(stepCoord({ rowIndex: 0, columnId: 'C1' }, 'right', geom, true).columnId).toBe('R0')
+  })
+
+  // Non-selectable columns (`type: 'action'`, placement.selectable === false) are skipped.
+  const withUnselectable = (col: string): GridGeometry => ({
+    ...geom,
+    placement: (id) => (id === col ? { ...COLS[col], selectable: false } : COLS[id]),
+  })
+
+  it('skips a non-selectable column when stepping left/right', () => {
+    const g = withUnselectable('C1')
+    expect(stepCoord({ rowIndex: 0, columnId: 'C0' }, 'right', g).columnId).toBe('C2')
+    expect(stepCoord({ rowIndex: 0, columnId: 'C2' }, 'left', g).columnId).toBe('C0')
+  })
+
+  it('stays put when there is no selectable column in that direction', () => {
+    const g = withUnselectable('R0')
+    expect(stepCoord({ rowIndex: 0, columnId: 'C2' }, 'right', g).columnId).toBe('C2')
+  })
+
+  it('toEdge lands on the last selectable column, skipping a trailing action column', () => {
+    const g = withUnselectable('R0')
+    expect(stepCoord({ rowIndex: 0, columnId: 'C0' }, 'right', g, true).columnId).toBe('C2')
   })
 })
 
@@ -99,5 +121,64 @@ describe('cellToZoneRect', () => {
 
   it('returns null for an unknown column', () => {
     expect(cellToZoneRect({ rowIndex: 0, columnId: 'ZZ' }, geom)).toBeNull()
+  })
+})
+
+describe('cellViewportRect', () => {
+  // gutter 40, left zone 80 -> leftBand 120; right zone 60; 500x320 viewport (~10 rows).
+  const baseView: ViewportInfo = {
+    scrollLeft: 0,
+    scrollTop: 0,
+    clientWidth: 500,
+    clientHeight: 320,
+    gutterW: 40,
+    leftBand: 120,
+    rightTotal: 60,
+  }
+
+  it('places a center cell after the left band and subtracts scrollLeft', () => {
+    expect(cellViewportRect({ rowIndex: 2, columnId: 'C1' }, geom, baseView)).toEqual({
+      x: 220, // leftBand 120 + offset 100 - scrollLeft 0
+      y: 96, // header 32 + row 2 * 32
+      width: 100,
+      height: 32,
+      visible: true,
+    })
+    expect(
+      cellViewportRect({ rowIndex: 2, columnId: 'C1' }, geom, { ...baseView, scrollLeft: 50 })!.x,
+    ).toBe(170)
+  })
+
+  it('pins frozen zones — scrollLeft does not move them', () => {
+    const scrolled = { ...baseView, scrollLeft: 300 }
+    expect(cellViewportRect({ rowIndex: 0, columnId: 'L0' }, geom, scrolled)).toMatchObject({
+      x: 40, // gutterW + offset 0
+      visible: true,
+    })
+    expect(cellViewportRect({ rowIndex: 0, columnId: 'R0' }, geom, scrolled)).toMatchObject({
+      x: 440, // clientWidth 500 - rightTotal 60 + offset 0
+      visible: true,
+    })
+  })
+
+  it('row position tracks scrollTop', () => {
+    expect(cellViewportRect({ rowIndex: 5, columnId: 'C0' }, geom, { ...baseView, scrollTop: 64 })!.y).toBe(
+      32 + 5 * 32 - 64,
+    )
+  })
+
+  it('marks a cell scrolled under the sticky header as not visible', () => {
+    const r = cellViewportRect({ rowIndex: 0, columnId: 'C0' }, geom, { ...baseView, scrollTop: 40 })
+    expect(r?.y).toBe(-8)
+    expect(r?.visible).toBe(false)
+  })
+
+  it('marks a center cell scrolled under the frozen-left band as not visible', () => {
+    const r = cellViewportRect({ rowIndex: 0, columnId: 'C0' }, geom, { ...baseView, scrollLeft: 200 })
+    expect(r?.visible).toBe(false) // x+width (20) is left of leftBand (120)
+  })
+
+  it('returns null for an unknown column', () => {
+    expect(cellViewportRect({ rowIndex: 0, columnId: 'ZZ' }, geom, baseView)).toBeNull()
   })
 })

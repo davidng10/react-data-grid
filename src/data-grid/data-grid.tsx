@@ -10,11 +10,14 @@ import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
+  ReactNode,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { VirtualItem } from "@tanstack/react-virtual";
 import type {
+  CellCommit,
   CellCoord,
+  CellEditContext,
   Column,
   ColumnId,
   FrozenZone,
@@ -24,6 +27,9 @@ import type {
 import { cellKey } from "./core/types";
 import { createGridStore } from "./core/store/grid-store";
 import type { GridStore } from "./core/store/grid-store";
+import { createEditStore } from "./core/store/edit-store";
+import type { EditStore } from "./core/store/edit-store";
+import { createPendingStore, ERROR_FLASH_MS } from "./core/store/pending-store";
 import {
   cellToZoneRect,
   rangeToZoneRects,
@@ -35,6 +41,8 @@ import type {
   GridGeometry,
   Zone,
 } from "./core/selection/geometry";
+import { EditorPortal } from "./editors/EditorPortal";
+import { PendingOverlay } from "./editors/PendingOverlay";
 
 // The grid shell (DOM-rendered). DECISIONS.md D5/D8/D9 + frozen zones (P4) + selection (P5).
 //
@@ -69,8 +77,12 @@ const HEADER_BORDER = "1px solid #d6d3d1";
 // a box-shadow (not a border) so it costs zero layout width: it overlays the scrolling center
 // at the boundary instead of widening the zone past the budgeted `totalWidth`.
 const FREEZE_DIVIDER_COLOR = "#d6d3d1";
-const FREEZE_DIVIDER_LEFT: CSSProperties = { boxShadow: `1px 0 0 0 ${FREEZE_DIVIDER_COLOR}` };
-const FREEZE_DIVIDER_RIGHT: CSSProperties = { boxShadow: `-1px 0 0 0 ${FREEZE_DIVIDER_COLOR}` };
+const FREEZE_DIVIDER_LEFT: CSSProperties = {
+  boxShadow: `1px 0 0 0 ${FREEZE_DIVIDER_COLOR}`,
+};
+const FREEZE_DIVIDER_RIGHT: CSSProperties = {
+  boxShadow: `-1px 0 0 0 ${FREEZE_DIVIDER_COLOR}`,
+};
 // Frozen body cells must be opaque so the scrolling center band doesn't show through them as it
 // slides underneath (z-ordering puts frozen zones above center). Read-mode only; transparency
 // for AntD edit cells is a P6 concern.
@@ -79,7 +91,7 @@ const FROZEN_BG = "#ffffff";
 // Overlay cosmetics (D6). The dumb shell hard-codes light styling; the D7 theming surface is P9.
 const SELECT_FILL = "rgba(37, 99, 235, 0.12)";
 const SELECT_BORDER = "1px solid rgba(37, 99, 235, 0.55)";
-const FOCUS_BORDER = "2px solid #2563eb";
+const FOCUS_BORDER = "1px solid #2563eb";
 
 // Auto-scroll while drag-selecting near a viewport edge.
 const EDGE_ZONE = 48;
@@ -96,6 +108,19 @@ export interface DataGridProps<T> {
   enableRowSelection?: boolean;
   /** Emitted on any selection change (D6). Full controlled mode (`selection` in) is a later phase. */
   onSelectionChange?: (next: GridSelection) => void;
+  /**
+   * Commit handler fallback when a column has no own `onCommit` (R4). Receives the parsed
+   * `nextValue`; the consumer persists it and feeds it back as new `rows` (the grid never mutates
+   * row data). Return a promise to drive the editor's `submitting`/`error` states.
+   */
+  onCellCommit?: (update: CellCommit<T>) => Promise<void> | void;
+  /**
+   * Style the floating editor panel — the grid-owned host that frames the active editor (D7). The
+   * host also carries `data-editing=""` for plain-CSS targeting. Overrides the default frame; the
+   * built-in editors and well-behaved custom `renderEdit`s render transparently to fill it.
+   */
+  editorClassName?: string;
+  editorStyle?: CSSProperties;
   /** Written during render so the perf meter can read counts without scroll-frequency setState. */
   statsRef?: { current: GridStats };
 }
@@ -114,15 +139,18 @@ const cellBase: CSSProperties = {
   textOverflow: "ellipsis",
 };
 
+// `content` is usually the value string (memo stays stable across scroll — D9). A column with a
+// custom `renderRead` passes a ReactNode instead; that breaks the memo for *those* cells only (a
+// fresh element each render), which is fine — custom-render columns are few, the bulk stay cheap.
 const Cell = memo(function Cell(props: {
-  value: string;
+  content: ReactNode;
   x: number;
   y: number;
   width: number;
   height: number;
   frozen?: FrozenZone;
 }) {
-  const { value, x, y, width, height, frozen } = props;
+  const { content, x, y, width, height, frozen } = props;
   return (
     <div
       data-frozen={frozen}
@@ -134,10 +162,25 @@ const Cell = memo(function Cell(props: {
         transform: `translate(${x}px, ${y}px)`,
       }}
     >
-      {value}
+      {content}
     </div>
   );
 });
+
+// Read-mode content for a body cell: a column's `renderRead` (D4) if present — where custom cell
+// UI like an actions button lives — else the value coerced to a truncated string (the cheap default
+// for the thousands of resting cells).
+function readContent<T>(
+  col: Column<T>,
+  row: T,
+  rowIndex: number,
+  rowId: RowId,
+): ReactNode {
+  const value = col.accessor(row);
+  return col.renderRead
+    ? col.renderRead({ row, rowId, rowIndex, column: col, value })
+    : String(value ?? "");
+}
 
 const HeaderCell = memo(function HeaderCell(props: {
   name: string;
@@ -173,17 +216,26 @@ const HeaderCell = memo(function HeaderCell(props: {
 const SelectionOverlay = memo(function SelectionOverlay(props: {
   zone: Zone;
   store: GridStore;
+  editStore: EditStore;
   geom: GridGeometry;
 }) {
-  const { zone, store, geom } = props;
+  const { zone, store, editStore, geom } = props;
   const selection = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const edit = useSyncExternalStore(editStore.subscribe, editStore.getSnapshot);
 
   const rangeRects = selection.range
     ? rangeToZoneRects(selection.range, geom).filter((r) => r.zone === zone)
     : [];
-  const focusRect = selection.focusedCell
-    ? cellToZoneRect(selection.focusedCell, geom)
-    : null;
+  // While a cell is being edited, the editor IS the focus indicator — suppress the focus outline so
+  // it doesn't peek out behind a custom editor's rounded corners / transparent edges.
+  const fc = selection.focusedCell;
+  const editingCell = edit.status === "idle" ? null : edit.cell;
+  const isEditingFocused =
+    fc != null &&
+    editingCell != null &&
+    editingCell.rowIndex === fc.rowIndex &&
+    editingCell.columnId === fc.columnId;
+  const focusRect = fc && !isEditingFocused ? cellToZoneRect(fc, geom) : null;
   const focus = focusRect && focusRect.zone === zone ? focusRect : null;
 
   if (rangeRects.length === 0 && !focus) return null;
@@ -239,8 +291,16 @@ function RowGutter(props: {
   getAllRowIds: () => RowId[];
   strongDivider: boolean;
 }) {
-  const { store, vRows, rowIdAt, rowCount, bodyHeight, rowHeight, getAllRowIds, strongDivider } =
-    props;
+  const {
+    store,
+    vRows,
+    rowIdAt,
+    rowCount,
+    bodyHeight,
+    rowHeight,
+    getAllRowIds,
+    strongDivider,
+  } = props;
   const selection = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const selectedCount = selection.selectedRows.size;
   const allChecked = rowCount > 0 && selectedCount >= rowCount;
@@ -296,7 +356,13 @@ function RowGutter(props: {
           }
         />
       </div>
-      <div style={{ position: "relative", height: bodyHeight, background: FROZEN_BG }}>
+      <div
+        style={{
+          position: "relative",
+          height: bodyHeight,
+          background: FROZEN_BG,
+        }}
+      >
         {vRows.map((vr) => {
           const rowId = rowIdAt(vr.index);
           return (
@@ -358,7 +424,8 @@ function colIndexAtX(offsets: number[], x: number): number {
   return ans;
 }
 
-const clampNum = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+const clampNum = (n: number, lo: number, hi: number) =>
+  Math.max(lo, Math.min(hi, n));
 
 const ARROW_DIR: Record<string, Direction> = {
   ArrowUp: "up",
@@ -377,11 +444,16 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     overscanCols = 2,
     enableRowSelection = false,
     onSelectionChange,
+    onCellCommit,
+    editorClassName,
+    editorStyle,
     statsRef,
   } = props;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [store] = useState(() => createGridStore());
+  const [editStore] = useState(() => createEditStore());
+  const [pendingStore] = useState(() => createPendingStore());
 
   const gutterW = enableRowSelection ? GUTTER_WIDTH : 0;
 
@@ -425,6 +497,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
           width: layout.widths[i],
           visualIndex,
           localIndex: i,
+          selectable: c.type !== "action",
         });
         order.push(c.id);
         visualIndex++;
@@ -502,6 +575,12 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   const lastHitRef = useRef<CellCoord | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const autoScrollRef = useRef<number | null>(null);
+  // Click-to-edit: a press on the ALREADY-focused cell opens its editor — but only on pointer-up
+  // and only if the pointer didn't drag (so a drag-select starting on the focused cell still
+  // selects a range, never edits). `pendingEditRef` holds that candidate cell; `movedRef` trips the
+  // moment the drag crosses into another cell.
+  const pendingEditRef = useRef<CellCoord | null>(null);
+  const movedRef = useRef(false);
 
   // Map a viewport point to a cell. Zone is chosen by screen band (the gutter + frozen zones are
   // pinned to the viewport edges); the header strip and the gutter return null (not selectable).
@@ -542,7 +621,11 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     if (cols.length === 0) return null;
     const i = colIndexAtX(offsets, zoneX);
     if (i < 0) return null;
-    return { rowIndex, columnId: cols[i].id };
+    const col = cols[i];
+    // Action columns are non-selectable — a click there isn't a cell hit (no focus/drag/auto-scroll),
+    // so interactive content inside handles its own clicks with no extra wiring.
+    if (!col || col.type === "action") return null;
+    return { rowIndex, columnId: col.id };
   };
 
   // Scroll a cell fully into view, accounting for the pinned chrome the virtualizer can't see:
@@ -563,26 +646,144 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     if (p && p.zone === "center") {
       const colLeft = leftBand + p.offset;
       const colRight = colLeft + p.width;
-      if (colLeft < el.scrollLeft + leftBand) el.scrollLeft = colLeft - leftBand;
+      if (colLeft < el.scrollLeft + leftBand)
+        el.scrollLeft = colLeft - leftBand;
       else if (colRight > el.scrollLeft + el.clientWidth - right.total) {
         el.scrollLeft = colRight - el.clientWidth + right.total;
       }
     }
   };
 
+  // --- editing (D4/R4/R5): triggers + commit orchestration → the edit store (→ EditorPortal) ---
+  // DataGrid never SUBSCRIBES to the edit store; it only calls mutators. Only EditorPortal reads
+  // it, so opening an editor / typing a draft / submit+error never re-render the windowed body.
+
+  const returnFocus = () => scrollRef.current?.focus();
+  const findColumn = (id: ColumnId) => columns.find((c) => c.id === id);
+
+  const isEditable = (cell: CellCoord): boolean => {
+    const col = findColumn(cell.columnId);
+    if (!col || col.type === "action" || !col.editable) return false;
+    if (col.editable === true) return true;
+    const row = rows[cell.rowIndex];
+    return col.editable({
+      row,
+      rowId: getRowId(row, cell.rowIndex),
+      rowIndex: cell.rowIndex,
+      column: col,
+      value: col.accessor(row),
+    });
+  };
+
+  // Open the editor on a cell. `initialDraft` overrides the current value (type-to-replace).
+  // A cell mid-commit is "disabled" — refuse until its pending overlay resolves.
+  const beginEdit = (cell: CellCoord, initialDraft?: unknown): boolean => {
+    const col = findColumn(cell.columnId);
+    const row = rows[cell.rowIndex];
+    if (!col || row == null || !isEditable(cell) || pendingStore.has(cell)) return false;
+    store.focusCell(cell);
+    scrollCellIntoView(cell);
+    editStore.begin(
+      cell,
+      initialDraft !== undefined ? initialDraft : col.accessor(row),
+    );
+    return true;
+  };
+
+  const cancelEdit = () => {
+    editStore.cancel(); // abandon — no commit
+    returnFocus();
+  };
+
+  // Commit the active edit OPTIMISTICALLY (D10): close the editor immediately, show the new value
+  // with a spinner via the pending overlay, and run the consumer's handler in the background.
+  // Parent stays authoritative (R4) — we never mutate `rows`. On success the persisted value flows
+  // back through `accessor` and the overlay clears; on failure the cell reverts to its old value
+  // and flashes red (the draft is discarded). The editor never lingers in a "submitting" state.
+  const startCommit = () => {
+    const snap = editStore.getSnapshot();
+    if (snap.status === "idle") return;
+    const { cell, draft } = snap;
+    editStore.succeed(); // close the editor NOW (hand off to the pending overlay)
+
+    const col = findColumn(cell.columnId);
+    const row = rows[cell.rowIndex];
+    if (!col || row == null) return;
+
+    const rowId = getRowId(row, cell.rowIndex);
+    const previousValue = col.accessor(row);
+    const editCtx: CellEditContext<T> = {
+      row,
+      rowId,
+      rowIndex: cell.rowIndex,
+      column: col,
+      value: previousValue,
+      draft,
+      setDraft: editStore.setDraft,
+      commit: () => {},
+      cancel: () => {},
+      status: "editing",
+      width: col.width ?? DEFAULT_COL_WIDTH,
+      height: rowHeight,
+    };
+    const nextValue = col.parseValue ? col.parseValue(draft, editCtx) : draft;
+    if (Object.is(nextValue, previousValue)) return; // nothing changed — no commit
+
+    const handler = col.onCommit ?? onCellCommit;
+    if (!handler) return; // nowhere to persist
+
+    pendingStore.setPending(cell, nextValue); // optimistic
+    Promise.resolve(handler({ rowId, row, columnId: col.id, previousValue, nextValue }))
+      .then(() => pendingStore.clear(cell)) // persisted → value flows back, overlay clears
+      .catch(() => {
+        pendingStore.setError(cell); // revert + flash; the draft is discarded
+        window.setTimeout(() => pendingStore.clear(cell), ERROR_FLASH_MS);
+      });
+  };
+
+  const commitCell = () => {
+    startCommit();
+    returnFocus();
+  };
+
+  // Commit (optimistically), then advance the focused cell — Enter→down, Tab→right. We do NOT wait
+  // for the async: the user moves on immediately; a later failure reverts + flashes that cell.
+  const commitAndMove = (dir: Direction) => {
+    const snap = editStore.getSnapshot();
+    const fromCell = snap.status === "idle" ? null : snap.cell;
+    startCommit();
+    returnFocus();
+    if (fromCell) {
+      const next = stepCoord(fromCell, dir, geom);
+      store.focusCell(next);
+      scrollCellIntoView(next);
+    }
+  };
+
   const extendDrag = (cell: CellCoord | null) => {
     if (!cell) return;
     const last = lastHitRef.current;
-    if (last && last.rowIndex === cell.rowIndex && last.columnId === cell.columnId) {
+    if (
+      last &&
+      last.rowIndex === cell.rowIndex &&
+      last.columnId === cell.columnId
+    ) {
       return; // same cell — skip the redundant store update
     }
     lastHitRef.current = cell;
+    movedRef.current = true; // crossed into another cell → this is a drag-select, not a click
     store.extendTo(cell);
   };
 
   // While dragging near a viewport edge, ramp the scroll and keep extending the range. The center
   // edges are inset by the gutter/frozen bands so auto-scroll triggers at the scrolling region's
   // edge, not under the pinned columns.
+  //
+  // Gated on `movedRef` (a drag has actually crossed a cell): the pinned frozen zones SIT in the
+  // edge bands, so a plain click on a frozen cell is "past the edge" and would otherwise scroll the
+  // table every frame until pointer-up. Auto-scroll is a drag feature — a stationary click must not
+  // trigger it. (By the time a real drag reaches an edge it has already crossed cells, so this never
+  // blocks legitimate drag-auto-scroll.)
   const autoScrollTick = () => {
     if (!draggingRef.current) {
       autoScrollRef.current = null;
@@ -590,7 +791,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     }
     const el = scrollRef.current;
     const pt = pointerRef.current;
-    if (el && pt) {
+    if (el && pt && movedRef.current) {
       const rect = el.getBoundingClientRect();
       const topLimit = rect.top + rowHeight;
       const leftLimit = rect.left + leftBand;
@@ -610,7 +811,8 @@ export function DataGrid<T>(props: DataGridProps<T>) {
 
   useEffect(
     () => () => {
-      if (autoScrollRef.current != null) cancelAnimationFrame(autoScrollRef.current);
+      if (autoScrollRef.current != null)
+        cancelAnimationFrame(autoScrollRef.current);
     },
     [],
   );
@@ -620,6 +822,17 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     const cell = hitTest(e.clientX, e.clientY);
     if (!cell) return; // header / gutter / outside — let native handlers (e.g. checkboxes) run
     scrollRef.current?.focus();
+    // Was this exact cell already the (single) focus before this press? If so, a plain click on it
+    // should open the editor (resolved on pointer-up, if the pointer didn't drag).
+    const prev = store.getSnapshot();
+    const alreadyFocused =
+      !e.shiftKey &&
+      prev.range == null &&
+      prev.focusedCell != null &&
+      prev.focusedCell.rowIndex === cell.rowIndex &&
+      prev.focusedCell.columnId === cell.columnId;
+    pendingEditRef.current = alreadyFocused ? cell : null;
+    movedRef.current = false;
     if (e.shiftKey) store.extendTo(cell);
     else store.focusCell(cell);
     draggingRef.current = true;
@@ -644,26 +857,52 @@ export function DataGrid<T>(props: DataGridProps<T>) {
       autoScrollRef.current = null;
     }
     scrollRef.current?.releasePointerCapture(e.pointerId);
+    // A click (no drag) on the already-focused cell enters edit mode.
+    const editCell = pendingEditRef.current;
+    pendingEditRef.current = null;
+    if (editCell && !movedRef.current) beginEdit(editCell);
   };
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    // While an editor is open it owns the keyboard (it's focused inside the body portal, so its
+    // keydowns don't even reach here — this is a belt-and-braces guard).
+    if (editStore.getSnapshot().status !== "idle") return;
+
     if (e.key === "Escape") {
       store.clearRange();
       return;
     }
+
+    const focused = store.getSnapshot().focusedCell;
+    if (focused) {
+      // Enter / F2 open the editor; a printable key opens it and replaces the value.
+      if (e.key === "Enter" || e.key === "F2") {
+        e.preventDefault();
+        beginEdit(focused);
+        return;
+      }
+      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        beginEdit(focused, e.key);
+        return;
+      }
+    }
+
     const dir = ARROW_DIR[e.key];
     if (!dir || columnOrder.length === 0) return;
     e.preventDefault();
 
-    const snap = store.getSnapshot();
-    if (!snap.focusedCell) {
-      // First arrow just lands focus on the origin cell.
-      const origin: CellCoord = { rowIndex: 0, columnId: columnOrder[0] };
+    if (!focused) {
+      // First arrow just lands focus on the origin cell — the first SELECTABLE column.
+      const firstSelectable =
+        columnOrder.find((id) => placementMap.get(id)?.selectable !== false) ??
+        columnOrder[0];
+      const origin: CellCoord = { rowIndex: 0, columnId: firstSelectable };
       store.focusCell(origin);
       scrollCellIntoView(origin);
       return;
     }
-    const next = stepCoord(snap.focusedCell, dir, geom, e.metaKey || e.ctrlKey);
+    const next = stepCoord(focused, dir, geom, e.metaKey || e.ctrlKey);
     if (e.shiftKey) store.extendTo(next);
     else store.focusCell(next);
     scrollCellIntoView(next);
@@ -676,14 +915,25 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   // center) containing its own `sticky; top: 0` header row (the corner) over an opaque body
   // band, plus the zone's selection overlay. Always-rendered columns × the windowed rows. The
   // left zone sticks at `leftBand`'s gutter offset so it sits just right of the checkbox gutter.
-  const renderFrozen = (side: FrozenZone, cols: Column<T>[], layout: ZoneLayout) => {
+  const renderFrozen = (
+    side: FrozenZone,
+    cols: Column<T>[],
+    layout: ZoneLayout,
+  ) => {
     if (cols.length === 0) return null;
     const stick: CSSProperties =
       side === "left"
         ? { left: gutterW, ...FREEZE_DIVIDER_LEFT }
         : { right: 0, ...FREEZE_DIVIDER_RIGHT };
     return (
-      <div style={{ flex: `0 0 ${layout.total}px`, position: "sticky", zIndex: 2, ...stick }}>
+      <div
+        style={{
+          flex: `0 0 ${layout.total}px`,
+          position: "sticky",
+          zIndex: 2,
+          ...stick,
+        }}
+      >
         {/* corner: sticky on both axes (this zone is sticky-left/right, the row is sticky-top) */}
         <div
           style={{
@@ -706,14 +956,20 @@ export function DataGrid<T>(props: DataGridProps<T>) {
             />
           ))}
         </div>
-        <div style={{ position: "relative", height: totalHeight, background: FROZEN_BG }}>
+        <div
+          style={{
+            position: "relative",
+            height: totalHeight,
+            background: FROZEN_BG,
+          }}
+        >
           {vRows.map((vr) => {
             const row = rows[vr.index];
             const rowId = getRowId(row, vr.index);
             return cols.map((col, i) => (
               <Cell
                 key={cellKey(rowId, col.id)}
-                value={String(col.accessor(row) ?? "")}
+                content={readContent(col, row, vr.index, rowId)}
                 x={layout.offsets[i]}
                 y={vr.start}
                 width={layout.widths[i]}
@@ -722,7 +978,8 @@ export function DataGrid<T>(props: DataGridProps<T>) {
               />
             ));
           })}
-          <SelectionOverlay zone={side} store={store} geom={geom} />
+          <SelectionOverlay zone={side} store={store} editStore={editStore} geom={geom} />
+          <PendingOverlay zone={side} pendingStore={pendingStore} geom={geom} />
         </div>
       </div>
     );
@@ -735,96 +992,120 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   // where `sticky; right: 0` needs it. Each zone's header is a `sticky; top: 0` row, so the
   // frozen corners pin on both axes.
   return (
-    <div
-      ref={scrollRef}
-      tabIndex={0}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onKeyDown={onKeyDown}
-      style={{
-        height: "100%",
-        overflow: "auto",
-        position: "relative",
-        outline: "none",
-        userSelect: "none",
-      }}
-    >
+    <>
       <div
+        ref={scrollRef}
+        tabIndex={0}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onKeyDown={onKeyDown}
         style={{
-          display: "flex",
-          width: totalWidth,
-          height: rowHeight + totalHeight,
+          height: "100%",
+          overflow: "auto",
           position: "relative",
+          outline: "none",
+          userSelect: "none",
         }}
       >
-        {enableRowSelection && (
-          <RowGutter
-            store={store}
-            vRows={vRows}
-            rowIdAt={rowIdAt}
-            rowCount={rows.length}
-            bodyHeight={totalHeight}
-            rowHeight={rowHeight}
-            getAllRowIds={getAllRowIds}
-            strongDivider={left.total === 0}
-          />
-        )}
+        <div
+          style={{
+            display: "flex",
+            width: totalWidth,
+            height: rowHeight + totalHeight,
+            position: "relative",
+          }}
+        >
+          {enableRowSelection && (
+            <RowGutter
+              store={store}
+              vRows={vRows}
+              rowIdAt={rowIdAt}
+              rowCount={rows.length}
+              bodyHeight={totalHeight}
+              rowHeight={rowHeight}
+              getAllRowIds={getAllRowIds}
+              strongDivider={left.total === 0}
+            />
+          )}
 
-        {renderFrozen("left", zones.left, left)}
+          {renderFrozen("left", zones.left, left)}
 
-        {/* center zone — the only horizontally windowed zone */}
-        <div style={{ flex: `0 0 ${center.total}px`, position: "relative" }}>
-          {/* sticky header — same scroll as the body, so it never trails */}
-          <div
-            style={{
-              position: "sticky",
-              top: 0,
-              zIndex: 1,
-              height: rowHeight,
-              background: HEADER_BG,
-              borderBottom: HEADER_BORDER,
-            }}
-          >
-            {vCols.map((vc) => {
-              const col = zones.center[vc.index];
-              return (
-                <HeaderCell
-                  key={col.id}
-                  name={col.name}
-                  x={vc.start - centerScrollMargin}
-                  width={vc.size}
-                  height={rowHeight}
-                />
-              );
-            })}
-          </div>
-
-          {/* body */}
-          <div style={{ position: "relative", height: totalHeight }}>
-            {vRows.map((vr) => {
-              const row = rows[vr.index];
-              const rowId = getRowId(row, vr.index);
-              return vCols.map((vc) => {
+          {/* center zone — the only horizontally windowed zone */}
+          <div style={{ flex: `0 0 ${center.total}px`, position: "relative" }}>
+            {/* sticky header — same scroll as the body, so it never trails */}
+            <div
+              style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 1,
+                height: rowHeight,
+                background: HEADER_BG,
+                borderBottom: HEADER_BORDER,
+              }}
+            >
+              {vCols.map((vc) => {
                 const col = zones.center[vc.index];
                 return (
-                  <Cell
-                    key={cellKey(rowId, col.id)}
-                    value={String(col.accessor(row) ?? "")}
+                  <HeaderCell
+                    key={col.id}
+                    name={col.name}
                     x={vc.start - centerScrollMargin}
-                    y={vr.start}
                     width={vc.size}
-                    height={vr.size}
+                    height={rowHeight}
                   />
                 );
-              });
-            })}
-            <SelectionOverlay zone="center" store={store} geom={geom} />
-          </div>
-        </div>
+              })}
+            </div>
 
-        {renderFrozen("right", zones.right, right)}
+            {/* body */}
+            <div style={{ position: "relative", height: totalHeight }}>
+              {vRows.map((vr) => {
+                const row = rows[vr.index];
+                const rowId = getRowId(row, vr.index);
+                return vCols.map((vc) => {
+                  const col = zones.center[vc.index];
+                  return (
+                    <Cell
+                      key={cellKey(rowId, col.id)}
+                      content={readContent(col, row, vr.index, rowId)}
+                      x={vc.start - centerScrollMargin}
+                      y={vr.start}
+                      width={vc.size}
+                      height={vr.size}
+                    />
+                  );
+                });
+              })}
+              <SelectionOverlay zone="center" store={store} editStore={editStore} geom={geom} />
+              <PendingOverlay zone="center" pendingStore={pendingStore} geom={geom} />
+            </div>
+          </div>
+
+          {renderFrozen("right", zones.right, right)}
+        </div>
       </div>
-    </div>
+
+      {/* The edit overlay — a body portal, so it escapes the scroll clip (R5/R7). Only this leaf
+          subscribes to the edit store; the windowed body above never re-renders on edit. */}
+      <EditorPortal
+        editStore={editStore}
+        scrollRef={scrollRef}
+        columns={columns}
+        rows={rows}
+        getRowId={getRowId}
+        geom={geom}
+        gutterW={gutterW}
+        leftBand={leftBand}
+        rightTotal={right.total}
+        rowHeight={rowHeight}
+        setDraft={editStore.setDraft}
+        commit={commitCell}
+        cancel={cancelEdit}
+        commitAndMove={commitAndMove}
+        editorClassName={editorClassName}
+        editorStyle={editorStyle}
+      />
+    </>
   );
 }

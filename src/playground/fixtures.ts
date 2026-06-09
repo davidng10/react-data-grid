@@ -18,7 +18,7 @@ export type DemoColumn = Column<DemoRow>
 /** Width used by fixture columns and the placeholder layout when a column omits one. */
 export const DEFAULT_COL_WIDTH = 140
 
-const WORDS = [
+export const WORDS = [
   'alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel',
   'india', 'juliet', 'kilo', 'lima', 'mike', 'november', 'oscar', 'papa',
 ]

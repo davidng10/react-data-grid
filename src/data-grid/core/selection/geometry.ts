@@ -23,6 +23,8 @@ export interface ColumnPlacement {
   width: number
   /** Index in the visual column order: `[...left, ...center, ...right]`. */
   visualIndex: number
+  /** False for non-selectable columns (`type: 'action'`); keyboard nav skips them. Default true. */
+  selectable?: boolean
 }
 
 export interface GridGeometry {
@@ -70,15 +72,24 @@ export function stepCoord(
   const lastCol = Math.max(0, geom.columnOrder.length - 1)
   const cur = geom.columnOrder.indexOf(focus.columnId)
   const base = cur < 0 ? 0 : cur
-  const next =
-    dir === 'left'
-      ? toEdge
-        ? 0
-        : base - 1
-      : toEdge
-        ? lastCol
-        : base + 1
-  return { rowIndex: focus.rowIndex, columnId: geom.columnOrder[clamp(next, 0, lastCol)] }
+  const step = dir === 'right' ? 1 : -1
+
+  // A column is selectable unless its placement says otherwise (`type: 'action'`). Skip those so
+  // keyboard nav never lands focus on a non-selectable cell.
+  const selectable = (i: number) => {
+    const p = geom.placement(geom.columnOrder[i])
+    return !p || p.selectable !== false
+  }
+  const scanFrom = (start: number, st: number) => {
+    for (let i = start; i >= 0 && i <= lastCol; i += st) if (selectable(i)) return i
+    return -1
+  }
+
+  // Normal: first selectable from base±1 in the step direction. toEdge (R6): jump to the far edge,
+  // then inward to the nearest selectable. If none in that direction, stay put.
+  let target = toEdge ? scanFrom(step > 0 ? lastCol : 0, -step) : scanFrom(base + step, step)
+  if (target < 0) target = base
+  return { rowIndex: focus.rowIndex, columnId: geom.columnOrder[clamp(target, 0, lastCol)] }
 }
 
 /**
@@ -132,4 +143,71 @@ export function cellToZoneRect(cell: CellCoord, geom: GridGeometry): ZoneRect | 
     width: p.width,
     height: geom.rowHeight,
   }
+}
+
+/**
+ * Live layout snapshot of the scroll container, in pixels. Everything the viewport math needs
+ * that GridGeometry doesn't carry (it's read from the DOM each reposition).
+ */
+export interface ViewportInfo {
+  scrollLeft: number
+  scrollTop: number
+  clientWidth: number
+  clientHeight: number
+  /** Checkbox gutter width (0 if disabled). */
+  gutterW: number
+  /** `gutterW + left.total` — where the center content begins. */
+  leftBand: number
+  /** Right frozen zone total width. */
+  rightTotal: number
+}
+
+/** A cell rectangle in VIEWPORT coords (relative to the scroll box's top-left). */
+export interface ViewportRect {
+  x: number
+  y: number
+  width: number
+  height: number
+  /** True when the cell overlaps the usable (un-pinned) viewport — used to clamp/hide the editor. */
+  visible: boolean
+}
+
+/**
+ * The cell's rectangle in VIEWPORT coordinates — unlike `cellToZoneRect` (zone-local, rides the
+ * compositor scroll), this is what a `position: fixed` portal editor needs: a screen position it
+ * must recompute on scroll, since a body portal does NOT ride the grid's internal scroll (§4 of
+ * INTERNALS, run forwards). The crux: only the center zone carries a `scrollLeft` term; the
+ * pinned (frozen) zones do not.
+ */
+export function cellViewportRect(
+  cell: CellCoord,
+  geom: GridGeometry,
+  view: ViewportInfo,
+): ViewportRect | null {
+  const p = geom.placement(cell.columnId)
+  if (!p) return null
+
+  const { rowHeight } = geom
+  // Vertical: the sticky header steals the top `rowHeight`.
+  const y = rowHeight + cell.rowIndex * rowHeight - view.scrollTop
+  // Horizontal: only the center adds scrollLeft (frozen zones are pinned).
+  let x: number
+  if (p.zone === 'left') x = view.gutterW + p.offset
+  else if (p.zone === 'right') x = view.clientWidth - view.rightTotal + p.offset
+  else x = view.leftBand + p.offset - view.scrollLeft
+
+  const width = p.width
+  const height = rowHeight
+
+  // Usable viewport excludes the pinned chrome. A frozen cell is always within its pinned band, so
+  // only the center cell can scroll out the left/right under the frozen zones.
+  let visible = y + height > rowHeight && y < view.clientHeight
+  if (p.zone === 'center') {
+    visible =
+      visible &&
+      x + width > view.leftBand &&
+      x < view.clientWidth - view.rightTotal
+  }
+
+  return { x, y, width, height, visible }
 }

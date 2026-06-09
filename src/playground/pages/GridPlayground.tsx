@@ -1,11 +1,59 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { makeColumns, makeRows, STRESS, type DemoColumn } from "../fixtures";
-import { DataGrid, type GridStats, type FrozenZone } from "../../data-grid";
+import { Button, Select } from "antd";
+import {
+  makeColumns,
+  makeRows,
+  STRESS,
+  WORDS,
+  type DemoColumn,
+  type DemoRow,
+} from "../fixtures";
+import {
+  DataGrid,
+  cellKey,
+  type CellCommit,
+  type CellKey,
+  type GridStats,
+  type FrozenZone,
+} from "../../data-grid";
 import { PerfOverlay } from "../PerfOverlay";
 import { ControlPanel } from "../ControlPanel";
 
 const MAX_FREEZE_PER_SIDE = 4;
+
+// Demo-only: AntD lives ONLY here (a devDependency), never in the grid. The grid stays headless —
+// this column proves the `renderEdit` override path with a real third-party component.
+const WORD_OPTIONS = WORDS.map((w) => ({ label: w, value: w }));
+
+// The two columns we make editable in the demo.
+const TEXT_COL = "c2"; // default floating text editor (zero-dep)
+const SELECT_COL = "c1"; // AntD Select via renderEdit (override path)
+
+// A frozen-right "actions" column. `type: "action"` makes its cells NON-selectable (the grid skips
+// them for pointer + keyboard), so the AntD Button inside handles its own clicks — no
+// stopPropagation/preventDefault wiring needed. Content lives in `renderRead`.
+const ACTIONS_COLUMN: DemoColumn = {
+  id: "actions",
+  name: "Actions",
+  width: 96,
+  frozen: "right",
+  type: "action",
+  accessor: () => "",
+  renderRead: () => (
+    <div style={{ display: "flex", alignItems: "center", height: "100%" }}>
+      <Button
+        size="small"
+        type="link"
+        onClick={() => {
+          window.alert("Action clicked");
+        }}
+      >
+        Action
+      </Button>
+    </div>
+  ),
+};
 
 export function GridPlayground() {
   const rows = useMemo(() => makeRows(STRESS.rows), []);
@@ -17,17 +65,99 @@ export function GridPlayground() {
   const [freezeRight, setFreezeRight] = useState(1);
   const [rowHeight, setRowHeight] = useState(32);
 
-  // Apply the freeze flags onto the columns (the grid is controlled — the consumer owns columns,
-  // R3). Accessors are reused from baseColumns, so this is a cheap re-map, not a regeneration.
+  // The parent-owned, authoritative edit store (R4): a sparse override map keyed by stable
+  // RowId:ColumnId. The grid never mutates row data — committed values land here and flow back in
+  // through the editable columns' `accessor. This override state exist because the synthetic data is generated.
+  const [overrides, setOverrides] = useState<Map<CellKey, string>>(
+    () => new Map(),
+  );
+
+  // Fake async commit (R4): ~700ms, ~30% rejection, so the demo exercises submitting + error +
+  // retry. On success, write the override; the column re-derives and the body shows the new value.
+  const onCellCommit = useCallback(async (u: CellCommit<DemoRow>) => {
+    await new Promise<void>((resolve, reject) => {
+      setTimeout(() => {
+        if (Math.random() < 0.4)
+          reject(new Error("Random save failure — retry"));
+        else resolve();
+      }, 700);
+    });
+    setOverrides((prev) => {
+      const next = new Map(prev);
+      next.set(cellKey(u.rowId, u.columnId), String(u.nextValue));
+      return next;
+    });
+  }, []);
+
+  // Apply freeze flags (R3) + make two columns editable. Re-derived when `overrides` changes so a
+  // committed value surfaces through the editable columns' accessor.
   const columns = useMemo<DemoColumn[]>(
-    () =>
-      baseColumns.map((c, i) => {
+    () => [
+      ...baseColumns.map((c, i): DemoColumn => {
         let frozen: FrozenZone | undefined;
         if (i < freezeLeft) frozen = "left";
         else if (i >= STRESS.cols - freezeRight) frozen = "right";
-        return { ...c, frozen };
+        const base: DemoColumn = { ...c, frozen };
+
+        if (c.id === TEXT_COL) {
+          return {
+            ...base,
+            name: "Note (text ✎)",
+            editable: true,
+            accessor: (row) =>
+              overrides.get(cellKey(row.id, TEXT_COL)) ?? c.accessor(row),
+          };
+        }
+        if (c.id === SELECT_COL) {
+          return {
+            ...base,
+            name: "Word (AntD ✎)",
+            editable: true,
+            type: "select",
+            options: WORD_OPTIONS,
+            accessor: (row) =>
+              overrides.get(cellKey(row.id, SELECT_COL)) ?? c.accessor(row),
+            // Override editor: a real AntD Select. The grid supplies draft/commit/cancel/status;
+            // AntD supplies the UI.
+            renderEdit: (ctx) => (
+              <Select
+                autoFocus
+                defaultOpen
+                // Borderless + fill: the grid's editor host provides the panel frame (border/shadow/
+                // bg), so the Select renders transparently into it — no double border, no clashing
+                // chrome. Style the panel itself via the grid's `editorStyle`/`editorClassName`.
+                variant="borderless"
+                // Render the dropdown INSIDE the editor host (not AntD's default body portal) so it
+                // (a) scrolls with the floating editor and (b) counts as "inside" for the grid's
+                // outside-click-to-close. This is the integrator's contract for popup editors (R7).
+                getPopupContainer={(node) =>
+                  node.parentElement ?? document.body
+                }
+                style={{ width: 200 }}
+                value={
+                  ctx.draft == null || ctx.draft === ""
+                    ? undefined
+                    : String(ctx.draft)
+                }
+                status={ctx.status === "error" ? "error" : undefined}
+                disabled={ctx.status === "submitting"}
+                options={WORD_OPTIONS}
+                onChange={(v) => {
+                  ctx.setDraft(v);
+                  ctx.commit();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") ctx.cancel();
+                }}
+              />
+            ),
+          };
+        }
+        return base;
       }),
-    [baseColumns, freezeLeft, freezeRight],
+      ACTIONS_COLUMN, // always frozen-right, last position
+    ],
+    [baseColumns, freezeLeft, freezeRight, overrides],
   );
 
   const statsRef = useRef<GridStats>({
@@ -48,7 +178,10 @@ export function GridPlayground() {
           flex: "none",
         }}
       >
-        <Link to="/" style={{ fontSize: 13, color: "#4f46e5", textDecoration: "none" }}>
+        <Link
+          to="/"
+          style={{ fontSize: 13, color: "#4f46e5", textDecoration: "none" }}
+        >
           ← home
         </Link>
         <strong style={{ fontSize: 14 }}>Data grid</strong>
@@ -62,7 +195,12 @@ export function GridPlayground() {
             color: "#166534",
           }}
         >
-          PHASE 5 · selection ({STRESS.rows.toLocaleString()}×{STRESS.cols.toLocaleString()})
+          PHASE 6 · editing ({STRESS.rows.toLocaleString()}×
+          {STRESS.cols.toLocaleString()})
+        </span>
+        <span style={{ fontSize: 11, color: "#78716c" }}>
+          double-click / Enter the “Note” or “Word” column to edit · Enter↓ ·
+          Tab→ · Esc cancels
         </span>
       </header>
 
@@ -88,6 +226,7 @@ export function GridPlayground() {
           getRowId={(row) => row.id}
           rowHeight={rowHeight}
           enableRowSelection={rowSelection}
+          onCellCommit={onCellCommit}
           statsRef={statsRef}
         />
       </div>

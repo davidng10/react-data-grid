@@ -213,8 +213,10 @@ doesn't.
 `src/data-grid/core/selection/geometry.ts` is DOM-free and covered by `geometry.test.ts`. Three functions:
 
 - `**stepCoord(focus, dir, geom, toEdge)`** — keyboard navigation. Up/down clamp the row index;
-left/right walk the **visual column order** (`[...left, ...center, ...right]`). `toEdge` (Cmd /
-Ctrl + arrow, R6) jumps straight to row 0 / last row / first / last column.
+left/right walk the **visual column order** (`[...left, ...center, ...right]`), **skipping
+non-selectable columns** (`placement.selectable === false`, i.e. `type: 'action'`) so focus never
+lands on an action cell. `toEdge` (Cmd / Ctrl + arrow, R6) jumps to the edge-most *selectable*
+row/column.
 - `**rangeToZoneRects(range, geom)`** — turns a `{anchor, focus}` range into the overlay rectangles.
 Vertical extent is pure arithmetic (uniform height, D8): `y = minRow*rowHeight`,
 `height = (maxRow−minRow+1)*rowHeight`. For x, it walks the selected columns and, **per zone**,
@@ -253,7 +255,9 @@ it's over and the current scroll. `hitTest`:
   (only the center adds `scrollLeft`). Binary-search the zone's `offsets` for the column.
 
 Returning `null` for the header/gutter is what makes clicking a checkbox *not* start a cell
-selection.
+selection. `hitTest` also returns `null` for an **`type: 'action'`** column, so a click on a
+row-action cell never focuses/drags it (and never starts auto-scroll) — the button inside owns the
+click.
 
 ### The drag lifecycle — `onPointerDown / Move / Up` + `extendDrag`
 
@@ -273,11 +277,16 @@ while dragging, a `**requestAnimationFrame` loop** runs: if the pointer is withi
 of an edge, it nudges `scrollTop` / `scrollLeft` by `EDGE_SPEED` (22px) and re-runs
 `extendDrag(hitTest(pointer))` to keep growing the selection.
 
-Two subtleties:
+Three subtleties:
 
 - The horizontal edges are **inset by the pinned bands** (`leftLimit = rect.left + leftBand`,
 `rightLimit = rect.left + clientWidth − right.total`), so auto-scroll triggers at the *scrolling*
 region's edge, not under the frozen columns.
+- **It only scrolls once a drag has actually crossed a cell** (`movedRef`). The pinned frozen zones
+*sit inside* the edge bands, so without this gate a plain **click** on a frozen cell counts as "past
+the edge" and would scroll the table every frame until pointer-up. Auto-scroll is a drag feature; a
+stationary click must not trigger it. (A real drag has already crossed cells by the time it reaches
+an edge, so the gate never blocks legitimate auto-scroll.)
 - It uses rAF (not `setInterval`) so it's frame-synced and stops cleanly on pointer-up; a cleanup
 effect cancels it on unmount.
 
@@ -334,6 +343,8 @@ frozen zone then sticks at `left: gutterW` so it sits just right of the gutter; 
 | **Drag-select / focus move**    | only the 3 `SelectionOverlay` leaves     | They draw ~3 rectangles. The body is never touched (D6).                                                  |
 | **Row checkbox toggle**         | only `RowGutter`                         | Click-driven, ~30 checkboxes.                                                                             |
 | **Selection change → consumer** | nothing in `DataGrid`                    | `onSelectionChange` fires from a plain store subscription (an effect), not React state.                   |
+| **Edit: open / keystroke** | only the `EditorPortal` leaf               | Draft lives in the edit store; `DataGrid` never subscribes. The portal repositions on scroll *imperatively* (ref transform), so even scrolling-while-editing doesn't re-render the body (§11). |
+| **Commit: saving / success / error** | only the `PendingOverlay` leaves   | The editor closes on commit; the optimistic value + spinner / red-flash live in the pending store, drawn by the per-zone overlay. Body untouched (§11). |
 
 
 The golden rule (D1): **scroll, drag, and hover never set React state on the per-cell render path.**
@@ -364,16 +375,133 @@ They update the store (→ overlay) or are absorbed by the virtualizer.
 **File map:**
 
 ```
-src/data-grid/                          ← the shippable grid (one self-contained folder)
+src/data-grid/                          ← the shippable grid (one self-contained folder, AntD-free)
   index.ts                              public barrel: `import { DataGrid, type Column } from ".../data-grid"`
-  data-grid.tsx                         shell, layout, virtualization, interaction
+  data-grid.tsx                         shell, layout, virtualization, interaction, edit orchestration
   core/store/grid-store.ts              selection store (+ grid-store.test.ts)
-  core/selection/geometry.ts            stepCoord / rangeToZoneRects / cellToZoneRect (+ geometry.test.ts)
-  core/types/                           Column, CellCoord, GridSelection, CellRange, ids
-src/playground/                         demo harness: the 100k×1k stress fixture + FPS overlay (not shipped)
+  core/store/edit-store.ts              edit state machine store — the open editor (+ edit-store.test.ts)
+  core/store/pending-store.ts           optimistic async-commit store (+ pending-store.test.ts)
+  core/selection/geometry.ts            stepCoord / rangeToZoneRects / cellToZoneRect / cellViewportRect (+ geometry.test.ts)
+  core/types/                           Column, CellCoord, GridSelection, EditState, CellCommit, ids
+  editors/EditorPortal.tsx              the edit overlay: a body portal that mounts the active editor (§11)
+  editors/FloatingTextEditor.tsx        zero-dep default editors (floating textarea + native select)
+  editors/PendingOverlay.tsx            per-zone saving/error overlay: optimistic value + spinner / red flash
+src/playground/                         demo harness: the 100k×1k fixture, FPS overlay, AntD edit demo (not shipped)
 src/app/                                demo harness: router (not shipped)
-DECISIONS.md                            what was decided and why (D0–D9, R1–R7, the roadmap)
+DECISIONS.md                            what was decided and why (D0–D10, R1–R7, the roadmap)
 ```
 
 Run the tests with `npm test`; the prod build (the only valid perf target) with
 `npm run build && npm run preview`.
+
+---
+
+## 11. The edit engine (P6, D10)
+
+Editing is **the same trick as selection, applied again**: plain-TS stores + memo'd overlay leaves,
+so the windowed body is never on the edit render path. The async lifecycle is deliberately split
+from the editor — committing closes the editor *immediately* and the saving/error state is handed
+to a separate store + overlay (the **optimistic** model, D10). Four pieces:
+
+**The edit store** (`core/store/edit-store.ts`) — a sibling of the selection store, holding the
+single open editor as an `EditState`. In the default (optimistic) flow it only ever cycles
+`idle ⇄ editing` (`begin / setDraft / succeed=close / cancel`); the `submitting / error` variants
+remain in the type for a custom editor that wants the alternative "stay open until resolve" model.
+Zero-React, immutable-snapshot. **`DataGrid` never subscribes to it** — only `EditorPortal` does —
+so opening an editor and every keystroke into the draft re-render **only that one leaf**, never the
+~500 windowed cells.
+
+**`EditorPortal`** (`editors/EditorPortal.tsx`) — the editing counterpart of `SelectionOverlay`,
+with one crucial difference: it renders through `createPortal` to `document.body`, not inside a zone
+container. That decision buys two of the deferred risks outright:
+
+- **R5 (survives unmount).** Because the editor is a body portal and *not* a body cell, column/row
+  virtualization can never unmount it mid-edit. Scroll the edited row far away and back — the draft
+  and the caret are still there.
+- **R7 (escape the clip).** A body portal isn't clipped by the grid's `overflow`/`transform`, so the
+  floating editor can grow past the cell and past the grid edges. This is the first real R7 solve;
+  the demo's AntD `Select` dropdown (its own portal, opened inside the floating editor) is the canary.
+
+The price of a body portal is that it does **not** ride the grid's compositor scroll (the whole
+point of §2's sticky zones). So the portal **repositions itself imperatively**: a layout effect
+computes the cell's *viewport* rect via the new pure `cellViewportRect` (§4's formulas run forwards:
+`y = rowHeight + row*rowHeight − scrollTop`; `x` adds `scrollLeft` only in the center) and writes
+`host.style.transform` directly. A `scroll`+`resize` listener (rAF-throttled) rewrites that transform
+on every scroll — **never setState**, so scrolling-while-editing still doesn't touch the body. The
+editor stays **"frozen" and visible**: as the edited cell scrolls toward an edge, the host position
+is **clamped to the usable (un-pinned) viewport** so it sticks at that edge rather than tucking under
+the header/frozen bands or scrolling away. (It never unmounts — R5 — and now never even hides.)
+
+**The editor panel is the host, not the editor.** The `EditorPortal` host carries the visual frame
+(border / shadow / background / radius) and is the single styling surface (D7): `editorClassName` /
+`editorStyle` on `GridProps` are applied to it, over a sensible default frame, and it always emits
+`data-editing=""` for plain CSS. **Every** editor — the built-ins *and* a custom `renderEdit` —
+renders **transparently to fill that one frame** (the default editors are borderless/transparent; a
+custom AntD `Select` uses `variant="borderless"`). This is the fix for "every third-party component
+clashes": the grid owns the cell-matching chrome; the component supplies only the input.
+
+**The editors** (`editors/FloatingTextEditor.tsx`) — the only built-ins, both **zero-dependency**,
+both bare/transparent (the host frames them):
+- the **floating text editor**, a `<textarea>` that auto-grows to fit its content (the Glide-style
+  "expandable" overlay) — min size = the cell, grows downward, capped width;
+- a bare native **`<select>`** for `type: 'select'` columns.
+
+Any column can replace them: if `column.renderEdit(ctx)` is defined, `EditorPortal` mounts that
+instead, inside the same floating host. `ctx` is the `CellEditContext` — `draft / setDraft / commit
+/ cancel / status / error` plus the cell's `width / height` (so a custom editor can fill the cell,
+e.g. `style={{ width: ctx.width }}`) — which is all an editor needs; the integrator brings the
+component (AntD, etc.). **The grid imports no UI library.**
+
+**Outside-click-to-close is the grid's job, not each editor's.** `EditorPortal` registers a
+capture-phase `pointerdown` listener on `document` while editing: a press anywhere outside the host
+commits the active edit, so *every* editor (default or custom) dismisses without wiring its own
+blur. The capture phase means it runs before the grid's own pointer handlers, which then re-select
+the clicked cell. **Integrator contract for popup editors:** a custom editor whose popup renders
+elsewhere (e.g. an AntD `Select` dropdown, which portals to `document.body` by default) must render
+that popup *inside the host* — `getPopupContainer={(node) => node.parentElement}` — so (a) a click
+on the popup counts as "inside" and doesn't dismiss the editor, and (b) the popup rides the host's
+scroll-reposition instead of floating free. The grid can't do this for them: it has no knowledge of
+a third-party library's portal.
+
+**The pending store + `PendingOverlay`** (`core/store/pending-store.ts`, `editors/PendingOverlay.tsx`)
+— the optimistic async layer, a third store drawn by a fourth per-zone overlay (sibling of
+`SelectionOverlay`, same zone-local positioning so it scrolls/pins with the cells). The store is a
+`Map<coordKey, {cell, value, status}>`; the overlay draws, per entry in its zone: **pending** → an
+opaque box over the cell showing the optimistic value + a right-edge SVG spinner (and the cell is
+non-editable — `beginEdit` refuses a pending cell); **error** → a transparent red-bordered box that
+fades over ~2s (Web Animations), letting the reverted old value show through from the body cell.
+Only this leaf subscribes to the pending store; commits are rare discrete events, so this is off the
+scroll/drag/keystroke hot path.
+
+**The commit lifecycle** lives in `DataGrid` (it owns the prop handlers). The key move (D10): commit
+**closes the editor and immediately hands off to the pending overlay** — it never `await`s in the
+editor, so nothing lingers:
+
+```
+begin (click focused cell / Enter / F2 / printable) → editStore.begin(cell, value | typedChar)
+type                                        → editStore.setDraft   (only EditorPortal re-renders)
+commit (Enter↓ / Tab→ / blur / select-pick) → editStore.succeed()  // editor closes NOW
+   parseValue; skip if unchanged; then →      pendingStore.setPending(cell, nextValue)  // optimistic
+   handler = column.onCommit ?? props.onCellCommit  (fire-and-forget):
+        resolve → pendingStore.clear(cell)            // persisted value flows back via accessor
+        reject  → pendingStore.setError(cell); setTimeout(clear, 2000)   // revert + red flash
+cancel (Esc)                                → editStore.cancel()   // abandon, no commit
+```
+
+Parent stays authoritative (R4): the grid **never mutates `rows`**. The consumer persists
+`nextValue` and feeds it back in — the playground demo keeps a sparse `Map<CellKey, value>` override
+that the editable columns' `accessor` reads, so a commit is O(1), not a 100k-row copy. `commitAndMove`
+advances the focused cell (Enter→down, Tab→right) *without waiting* for the async and returns DOM
+focus to the scroll container so keyboard nav resumes; a later failure reverts + flashes that cell.
+
+> On failure the cell reverts and the typed draft is **discarded** (preserving it and silently
+> repopulating the cell on next open read as a bug — not worth it without a dedicated affordance).
+> The red-flash animation and the store-clear delay share one constant (`ERROR_FLASH_MS`) so they
+> can't drift — a mismatch makes the flash snap back and "flash twice".
+>
+> `renderRead` (D4) IS wired into the body cell (`readContent`): a column with `renderRead` renders
+> custom read-mode UI (e.g. a frozen actions-button column); such cells re-render with the body on
+> scroll (only string-valued cells keep the D9 memo — fine, custom columns are few). An interactive
+> control inside a cell should `stopPropagation` on pointerdown (so the click doesn't trip cell
+> focus/edit) and `preventDefault` on mousedown (so it doesn't steal keyboard focus from the grid).
+> Still deferred: the full D7 `data-*` styling surface (P9).
