@@ -7,7 +7,7 @@
 // Memory note: we do NOT materialize 100k x 1k = 100M cell strings. Rows are tiny `{ id }`
 // objects and each column's accessor computes its display value deterministically on demand.
 
-import type { Column } from '../core/types'
+import type { Column } from '../data-grid'
 
 export interface DemoRow {
   id: number

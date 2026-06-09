@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createGridStore } from './gridStore'
+import { createGridStore } from './grid-store'
 
 describe('gridStore', () => {
   it('focusCell sets the cursor and drops any range', () => {

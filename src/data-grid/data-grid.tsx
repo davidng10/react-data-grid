@@ -12,6 +12,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import type { VirtualItem } from "@tanstack/react-virtual";
 import type {
   CellCoord,
   Column,
@@ -19,21 +20,21 @@ import type {
   FrozenZone,
   GridSelection,
   RowId,
-} from "../core/types";
-import { cellKey } from "../core/types";
-import { createGridStore } from "../core/store/gridStore";
-import type { GridStore } from "../core/store/gridStore";
+} from "./core/types";
+import { cellKey } from "./core/types";
+import { createGridStore } from "./core/store/grid-store";
+import type { GridStore } from "./core/store/grid-store";
 import {
   cellToZoneRect,
   rangeToZoneRects,
   stepCoord,
-} from "../core/selection/geometry";
+} from "./core/selection/geometry";
 import type {
   ColumnPlacement,
   Direction,
   GridGeometry,
   Zone,
-} from "../core/selection/geometry";
+} from "./core/selection/geometry";
 
 // The grid shell (DOM-rendered). DECISIONS.md D5/D8/D9 + frozen zones (P4) + selection (P5).
 //
@@ -43,12 +44,14 @@ import type {
 //
 // Frozen zones (D5): columns split into three zones (left/center/right) laid out as a flex row;
 // left/right are `position: sticky` so they ride the body's compositor scroll (zero JS sync),
-// and each zone owns its own `sticky; top:0` header so the frozen corners pin on both axes.
+// and each zone owns its own `sticky; top:0` header so the frozen corners pin on both axes. An
+// optional shell-owned checkbox gutter is a fourth sticky element pinned at the very left.
 //
 // Selection (D6): the focused cell + range live in a plain-TS store (D1), drawn as per-zone
-// OVERLAY rectangles — never as per-cell flags. Only the overlay leaves subscribe to the store
-// (`useSyncExternalStore`); the windowed body never re-renders on focus/drag, so a 1,000-column
-// drag-select stays cheap. Pointer drag and keyboard nav route through the store + pure geometry.
+// OVERLAY rectangles — never as per-cell flags. Only the overlay leaves + the checkbox gutter
+// subscribe to the store (`useSyncExternalStore`); the windowed body never re-renders on
+// focus/drag, so a 1,000-column drag-select stays cheap. Pointer drag (with edge auto-scroll)
+// and keyboard nav route through the store + pure geometry.
 
 export interface GridStats {
   rows: number;
@@ -58,6 +61,7 @@ export interface GridStats {
 
 const DEFAULT_ROW_HEIGHT = 32;
 const DEFAULT_COL_WIDTH = 140;
+const GUTTER_WIDTH = 40;
 
 const HEADER_BG = "#f5f5f4";
 const HEADER_BORDER = "1px solid #d6d3d1";
@@ -65,6 +69,8 @@ const HEADER_BORDER = "1px solid #d6d3d1";
 // a box-shadow (not a border) so it costs zero layout width: it overlays the scrolling center
 // at the boundary instead of widening the zone past the budgeted `totalWidth`.
 const FREEZE_DIVIDER_COLOR = "#d6d3d1";
+const FREEZE_DIVIDER_LEFT: CSSProperties = { boxShadow: `1px 0 0 0 ${FREEZE_DIVIDER_COLOR}` };
+const FREEZE_DIVIDER_RIGHT: CSSProperties = { boxShadow: `-1px 0 0 0 ${FREEZE_DIVIDER_COLOR}` };
 // Frozen body cells must be opaque so the scrolling center band doesn't show through them as it
 // slides underneath (z-ordering puts frozen zones above center). Read-mode only; transparency
 // for AntD edit cells is a P6 concern.
@@ -75,6 +81,10 @@ const SELECT_FILL = "rgba(37, 99, 235, 0.12)";
 const SELECT_BORDER = "1px solid rgba(37, 99, 235, 0.55)";
 const FOCUS_BORDER = "2px solid #2563eb";
 
+// Auto-scroll while drag-selecting near a viewport edge.
+const EDGE_ZONE = 48;
+const EDGE_SPEED = 22;
+
 export interface DataGridProps<T> {
   rows: T[];
   columns: Column<T>[];
@@ -82,6 +92,8 @@ export interface DataGridProps<T> {
   rowHeight?: number;
   overscanRows?: number;
   overscanCols?: number;
+  /** Show the shell-owned row-checkbox gutter, pinned at the far left (D6). */
+  enableRowSelection?: boolean;
   /** Emitted on any selection change (D6). Full controlled mode (`selection` in) is a later phase. */
   onSelectionChange?: (next: GridSelection) => void;
   /** Written during render so the perf meter can read counts without scroll-frequency setState. */
@@ -214,6 +226,102 @@ const SelectionOverlay = memo(function SelectionOverlay(props: {
   );
 });
 
+// Shell-owned row-selection gutter, pinned at the far left. Subscribes to the store for the
+// selected-row set (a click re-renders only this leaf, never the body). Re-renders on scroll too
+// (its windowed rows change), but that's ~30 checkboxes — negligible next to the body.
+function RowGutter(props: {
+  store: GridStore;
+  vRows: VirtualItem[];
+  rowIdAt: (index: number) => RowId;
+  rowCount: number;
+  bodyHeight: number;
+  rowHeight: number;
+  getAllRowIds: () => RowId[];
+  strongDivider: boolean;
+}) {
+  const { store, vRows, rowIdAt, rowCount, bodyHeight, rowHeight, getAllRowIds, strongDivider } =
+    props;
+  const selection = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const selectedCount = selection.selectedRows.size;
+  const allChecked = rowCount > 0 && selectedCount >= rowCount;
+  const someChecked = selectedCount > 0 && !allChecked;
+
+  const cellStyle: CSSProperties = {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: GUTTER_WIDTH,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRight: "1px solid #e7e5e4",
+    borderBottom: "1px solid #f0efee",
+    boxSizing: "border-box",
+  };
+
+  return (
+    <div
+      style={{
+        flex: `0 0 ${GUTTER_WIDTH}px`,
+        position: "sticky",
+        left: 0,
+        zIndex: 3,
+        ...(strongDivider ? FREEZE_DIVIDER_LEFT : null),
+      }}
+    >
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 1,
+          height: rowHeight,
+          background: HEADER_BG,
+          borderBottom: HEADER_BORDER,
+          borderRight: "1px solid #e7e5e4",
+          boxSizing: "border-box",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <input
+          type="checkbox"
+          aria-label="Select all rows"
+          checked={allChecked}
+          ref={(el) => {
+            if (el) el.indeterminate = someChecked;
+          }}
+          onChange={() =>
+            store.setRowsSelected(getAllRowIds(), !(allChecked || someChecked))
+          }
+        />
+      </div>
+      <div style={{ position: "relative", height: bodyHeight, background: FROZEN_BG }}>
+        {vRows.map((vr) => {
+          const rowId = rowIdAt(vr.index);
+          return (
+            <div
+              key={vr.key}
+              style={{
+                ...cellStyle,
+                height: vr.size,
+                transform: `translateY(${vr.start}px)`,
+              }}
+            >
+              <input
+                type="checkbox"
+                aria-label={`Select row ${vr.index + 1}`}
+                checked={selection.selectedRows.has(rowId)}
+                onChange={() => store.toggleRow(rowId)}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 interface ZoneLayout {
   widths: number[];
   /** Cumulative start offset of each column within the zone. */
@@ -250,6 +358,8 @@ function colIndexAtX(offsets: number[], x: number): number {
   return ans;
 }
 
+const clampNum = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+
 const ARROW_DIR: Record<string, Direction> = {
   ArrowUp: "up",
   ArrowDown: "down",
@@ -265,12 +375,15 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     rowHeight = DEFAULT_ROW_HEIGHT,
     overscanRows = 6,
     overscanCols = 2,
+    enableRowSelection = false,
     onSelectionChange,
     statsRef,
   } = props;
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [store] = useState(() => createGridStore());
+
+  const gutterW = enableRowSelection ? GUTTER_WIDTH : 0;
 
   // Partition columns into the three zones, preserving relative order within each. Cross-zone
   // reorder is disallowed (D5), so grouping by `frozen` is the whole zoning model.
@@ -290,11 +403,11 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   const center = useMemo(() => zoneLayout(zones.center), [zones.center]);
   const right = useMemo(() => zoneLayout(zones.right), [zones.right]);
 
-  // The center content starts `left.total` into the scroll container, so the column virtualizer
-  // must account for that offset when it computes the visible window (and we subtract it back
-  // out when positioning, since `vc.start` then includes the margin).
-  const centerScrollMargin = left.total;
-  const totalWidth = left.total + center.total + right.total;
+  // Content x where the left frozen zone begins (after the gutter) and where the center begins
+  // (after gutter + left zone). The column virtualizer's window must be offset by the latter.
+  const leftBand = gutterW + left.total;
+  const centerScrollMargin = leftBand;
+  const totalWidth = leftBand + center.total + right.total;
 
   // Placement of every column in its zone-local coords + the visual column order, both for the
   // overlay geometry and for keyboard stepping / scroll-into-view. `localIndex` is the per-zone
@@ -376,9 +489,12 @@ export function DataGrid<T>(props: DataGridProps<T>) {
 
   const draggingRef = useRef(false);
   const lastHitRef = useRef<CellCoord | null>(null);
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
+  const autoScrollRef = useRef<number | null>(null);
 
-  // Map a viewport point to a cell. Zone is chosen by screen band (frozen zones are pinned to
-  // the viewport edges); the header strip and out-of-range points return null.
+  // Map a viewport point to a cell. Zone is chosen by screen band (the gutter + frozen zones are
+  // pinned to the viewport edges); the header strip and the gutter return null (not selectable).
+  // Row/column clamp to the grid edges so a drag past the edge still resolves to the last cell.
   const hitTest = (clientX: number, clientY: number): CellCoord | null => {
     const el = scrollRef.current;
     if (!el || columnOrder.length === 0) return null;
@@ -386,18 +502,23 @@ export function DataGrid<T>(props: DataGridProps<T>) {
 
     const vpY = clientY - rect.top;
     if (vpY < rowHeight) return null; // over the sticky header
-    const rowIndex = Math.floor((vpY - rowHeight + el.scrollTop) / rowHeight);
-    if (rowIndex < 0 || rowIndex >= rows.length) return null;
+    const rowIndex = clampNum(
+      Math.floor((vpY - rowHeight + el.scrollTop) / rowHeight),
+      0,
+      rows.length - 1,
+    );
 
     const localX = clientX - rect.left;
     const viewportW = el.clientWidth;
+    if (gutterW > 0 && localX < gutterW) return null; // over the checkbox gutter
+
     let cols: Column<T>[];
     let offsets: number[];
     let zoneX: number;
-    if (left.total > 0 && localX < left.total) {
+    if (left.total > 0 && localX < leftBand) {
       cols = zones.left;
       offsets = left.offsets;
-      zoneX = localX;
+      zoneX = localX - gutterW;
     } else if (right.total > 0 && localX >= viewportW - right.total) {
       cols = zones.right;
       offsets = right.offsets;
@@ -405,7 +526,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     } else {
       cols = zones.center;
       offsets = center.offsets;
-      zoneX = localX - left.total + el.scrollLeft;
+      zoneX = localX - leftBand + el.scrollLeft;
     }
     if (cols.length === 0) return null;
     const i = colIndexAtX(offsets, zoneX);
@@ -413,29 +534,32 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     return { rowIndex, columnId: cols[i].id };
   };
 
+  // Scroll a cell fully into view, accounting for the pinned chrome the virtualizer can't see:
+  // the sticky header (top `rowHeight`) and the gutter + frozen bands (left/right). Setting
+  // scrollTop/scrollLeft drives the virtualizer, which re-renders the windowed body.
   const scrollCellIntoView = (cell: CellCoord) => {
-    rowVirtualizer.scrollToIndex(cell.rowIndex, { align: "auto" });
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const rowTop = rowHeight + cell.rowIndex * rowHeight;
+    const rowBottom = rowTop + rowHeight;
+    if (rowTop < el.scrollTop + rowHeight) el.scrollTop = rowTop - rowHeight;
+    else if (rowBottom > el.scrollTop + el.clientHeight) {
+      el.scrollTop = rowBottom - el.clientHeight;
+    }
+
     const p = placementMap.get(cell.columnId);
     if (p && p.zone === "center") {
-      colVirtualizer.scrollToIndex(p.localIndex, { align: "auto" });
+      const colLeft = leftBand + p.offset;
+      const colRight = colLeft + p.width;
+      if (colLeft < el.scrollLeft + leftBand) el.scrollLeft = colLeft - leftBand;
+      else if (colRight > el.scrollLeft + el.clientWidth - right.total) {
+        el.scrollLeft = colRight - el.clientWidth + right.total;
+      }
     }
   };
 
-  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    const cell = hitTest(e.clientX, e.clientY);
-    if (!cell) return;
-    scrollRef.current?.focus();
-    if (e.shiftKey) store.extendTo(cell);
-    else store.focusCell(cell);
-    draggingRef.current = true;
-    lastHitRef.current = cell;
-    scrollRef.current?.setPointerCapture(e.pointerId);
-  };
-
-  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!draggingRef.current) return;
-    const cell = hitTest(e.clientX, e.clientY);
+  const extendDrag = (cell: CellCoord | null) => {
     if (!cell) return;
     const last = lastHitRef.current;
     if (last && last.rowIndex === cell.rowIndex && last.columnId === cell.columnId) {
@@ -445,8 +569,69 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     store.extendTo(cell);
   };
 
+  // While dragging near a viewport edge, ramp the scroll and keep extending the range. The center
+  // edges are inset by the gutter/frozen bands so auto-scroll triggers at the scrolling region's
+  // edge, not under the pinned columns.
+  const autoScrollTick = () => {
+    if (!draggingRef.current) {
+      autoScrollRef.current = null;
+      return;
+    }
+    const el = scrollRef.current;
+    const pt = pointerRef.current;
+    if (el && pt) {
+      const rect = el.getBoundingClientRect();
+      const topLimit = rect.top + rowHeight;
+      const leftLimit = rect.left + leftBand;
+      const rightLimit = rect.left + el.clientWidth - right.total;
+      let dx = 0;
+      let dy = 0;
+      if (pt.y < topLimit + EDGE_ZONE) dy = -EDGE_SPEED;
+      else if (pt.y > rect.bottom - EDGE_ZONE) dy = EDGE_SPEED;
+      if (pt.x < leftLimit + EDGE_ZONE) dx = -EDGE_SPEED;
+      else if (pt.x > rightLimit - EDGE_ZONE) dx = EDGE_SPEED;
+      if (dy) el.scrollTop += dy;
+      if (dx) el.scrollLeft += dx;
+      if (dx || dy) extendDrag(hitTest(pt.x, pt.y));
+    }
+    autoScrollRef.current = requestAnimationFrame(autoScrollTick);
+  };
+
+  useEffect(
+    () => () => {
+      if (autoScrollRef.current != null) cancelAnimationFrame(autoScrollRef.current);
+    },
+    [],
+  );
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const cell = hitTest(e.clientX, e.clientY);
+    if (!cell) return; // header / gutter / outside — let native handlers (e.g. checkboxes) run
+    scrollRef.current?.focus();
+    if (e.shiftKey) store.extendTo(cell);
+    else store.focusCell(cell);
+    draggingRef.current = true;
+    lastHitRef.current = cell;
+    pointerRef.current = { x: e.clientX, y: e.clientY };
+    scrollRef.current?.setPointerCapture(e.pointerId);
+    if (autoScrollRef.current == null) {
+      autoScrollRef.current = requestAnimationFrame(autoScrollTick);
+    }
+  };
+
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return;
+    pointerRef.current = { x: e.clientX, y: e.clientY };
+    extendDrag(hitTest(e.clientX, e.clientY));
+  };
+
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     draggingRef.current = false;
+    if (autoScrollRef.current != null) {
+      cancelAnimationFrame(autoScrollRef.current);
+      autoScrollRef.current = null;
+    }
     scrollRef.current?.releasePointerCapture(e.pointerId);
   };
 
@@ -473,15 +658,19 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     scrollCellIntoView(next);
   };
 
+  const rowIdAt = (index: number) => getRowId(rows[index], index);
+  const getAllRowIds = () => rows.map((row, i) => getRowId(row, i));
+
   // Renders a frozen zone: a `sticky; left|right: 0` flex item (z 2 — above the scrolling
   // center) containing its own `sticky; top: 0` header row (the corner) over an opaque body
-  // band, plus the zone's selection overlay. Always-rendered columns × the windowed rows.
+  // band, plus the zone's selection overlay. Always-rendered columns × the windowed rows. The
+  // left zone sticks at `leftBand`'s gutter offset so it sits just right of the checkbox gutter.
   const renderFrozen = (side: FrozenZone, cols: Column<T>[], layout: ZoneLayout) => {
     if (cols.length === 0) return null;
     const stick: CSSProperties =
       side === "left"
-        ? { left: 0, boxShadow: `1px 0 0 0 ${FREEZE_DIVIDER_COLOR}` }
-        : { right: 0, boxShadow: `-1px 0 0 0 ${FREEZE_DIVIDER_COLOR}` };
+        ? { left: gutterW, ...FREEZE_DIVIDER_LEFT }
+        : { right: 0, ...FREEZE_DIVIDER_RIGHT };
     return (
       <div style={{ flex: `0 0 ${layout.total}px`, position: "sticky", zIndex: 2, ...stick }}>
         {/* corner: sticky on both axes (this zone is sticky-left/right, the row is sticky-top) */}
@@ -528,11 +717,12 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     );
   };
 
-  // Single native scroll container. Inside it a flex row holds the three zones: left/right are
-  // `position: sticky` so they ride the same compositor-driven scroll as the body (horizontal
-  // freeze with zero JS sync, mirroring the sticky header's vertical freeze). Flex places the
-  // right zone at the content's right edge, which is exactly where `sticky; right: 0` needs it.
-  // Each zone's header is a `sticky; top: 0` row, so the frozen corners pin on both axes.
+  // Single native scroll container. Inside it a flex row holds the gutter + three zones: the
+  // gutter and left/right zones are `position: sticky` so they ride the same compositor-driven
+  // scroll as the body (horizontal freeze with zero JS sync, mirroring the sticky header's
+  // vertical freeze). Flex places the right zone at the content's right edge, which is exactly
+  // where `sticky; right: 0` needs it. Each zone's header is a `sticky; top: 0` row, so the
+  // frozen corners pin on both axes.
   return (
     <div
       ref={scrollRef}
@@ -557,6 +747,19 @@ export function DataGrid<T>(props: DataGridProps<T>) {
           position: "relative",
         }}
       >
+        {enableRowSelection && (
+          <RowGutter
+            store={store}
+            vRows={vRows}
+            rowIdAt={rowIdAt}
+            rowCount={rows.length}
+            bodyHeight={totalHeight}
+            rowHeight={rowHeight}
+            getAllRowIds={getAllRowIds}
+            strongDivider={left.total === 0}
+          />
+        )}
+
         {renderFrozen("left", zones.left, left)}
 
         {/* center zone — the only horizontally windowed zone */}

@@ -1,7 +1,7 @@
 import { useMemo, useRef } from "react";
 import { Link } from "react-router";
 import { makeColumns, makeRows, STRESS } from "../fixtures";
-import { DataGrid, type GridStats } from "../../grid/DataGrid";
+import { DataGrid, type GridStats } from "../../data-grid";
 import { PerfOverlay } from "../PerfOverlay";
 
 const ROW_HEIGHT = 32;
@@ -56,6 +56,7 @@ export function GridPlayground() {
           columns={columns}
           getRowId={(row) => row.id}
           rowHeight={ROW_HEIGHT}
+          enableRowSelection
           statsRef={statsRef}
         />
       </div>
