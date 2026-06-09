@@ -44,7 +44,7 @@ export function GridPlayground() {
             color: "#166534",
           }}
         >
-          PHASE 2 · virtualized ({STRESS.rows.toLocaleString()}×
+          PHASE 4 · frozen zones ({STRESS.rows.toLocaleString()}×
           {STRESS.cols.toLocaleString()})
         </span>
       </header>
