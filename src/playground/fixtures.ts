@@ -42,8 +42,8 @@ export function makeColumns(count: number): DemoColumn[] {
   const cols: DemoColumn[] = new Array(count)
   for (let c = 0; c < count; c++) {
     if (c === 0) {
-      // Frozen-left so the row number stays visible while scrolling horizontally (P4 demo).
-      cols[c] = { id: 'c0', name: '#', width: 80, frozen: 'left', accessor: (row) => String(row.id) }
+      // The row-number column. Freezing is applied by the playground control panel, not here.
+      cols[c] = { id: 'c0', name: '#', width: 80, accessor: (row) => String(row.id) }
       continue
     }
     const colIndex = c
@@ -51,8 +51,6 @@ export function makeColumns(count: number): DemoColumn[] {
       id: `c${c}`,
       name: `Col ${c}`,
       width: DEFAULT_COL_WIDTH,
-      // Pin the last column right to exercise the right frozen zone (P4 demo).
-      frozen: c === count - 1 ? 'right' : undefined,
       accessor: (row) => {
         const h = hash(row.id * 1_000_003 + colIndex)
         switch (colIndex % 3) {

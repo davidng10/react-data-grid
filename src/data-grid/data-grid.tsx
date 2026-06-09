@@ -464,6 +464,17 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     scrollMargin: centerScrollMargin,
   });
 
+  // TanStack Virtual caches item sizes; a *count* change is picked up automatically, but a change
+  // to `estimateSize` (row height, or a column's width) is NOT — without resetting the cache the
+  // body keeps rendering stale sizes while the header/overlay use the new ones. Re-measure when
+  // the size inputs change.
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [rowVirtualizer, rowHeight]);
+  useEffect(() => {
+    colVirtualizer.measure();
+  }, [colVirtualizer, center.widths]);
+
   const vRows = rowVirtualizer.getVirtualItems();
   const vCols = colVirtualizer.getVirtualItems();
   const totalHeight = rowVirtualizer.getTotalSize();
