@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router'
-import { makeColumns, makeRows } from '../fixtures'
+import { DEFAULT_COL_WIDTH, makeColumns, makeRows } from '../fixtures'
 import { PerfOverlay } from '../PerfOverlay'
 
 // Phase 0 PLACEHOLDER. This is a NAIVE, non-virtualized render — it exists only to give the
@@ -14,7 +14,10 @@ const ROW_HEIGHT = 32
 export function DomPlayground() {
   const rows = useMemo(() => makeRows(ROWS), [])
   const columns = useMemo(() => makeColumns(COLS), [])
-  const totalWidth = useMemo(() => columns.reduce((sum, c) => sum + c.width, 0), [columns])
+  const totalWidth = useMemo(
+    () => columns.reduce((sum, c) => sum + (c.width ?? DEFAULT_COL_WIDTH), 0),
+    [columns],
+  )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -57,7 +60,7 @@ export function DomPlayground() {
             <div
               key={c.id}
               style={{
-                width: c.width,
+                width: c.width ?? DEFAULT_COL_WIDTH,
                 flex: 'none',
                 padding: '0 10px',
                 height: ROW_HEIGHT,
@@ -83,7 +86,7 @@ export function DomPlayground() {
                 <div
                   key={c.id}
                   style={{
-                    width: c.width,
+                    width: c.width ?? DEFAULT_COL_WIDTH,
                     flex: 'none',
                     padding: '0 10px',
                     lineHeight: `${ROW_HEIGHT}px`,
@@ -95,7 +98,8 @@ export function DomPlayground() {
                     textOverflow: 'ellipsis',
                   }}
                 >
-                  {c.accessor(row)}
+                  {/* Read-mode coercion: undefined type => String(value) (D4). */}
+                  {String(c.accessor(row) ?? '')}
                 </div>
               ))}
             </div>

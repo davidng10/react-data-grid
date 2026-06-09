@@ -1,23 +1,22 @@
 // Stress fixtures for the playground.
 //
-// Provisional types — the real `Column<T>` / schema lands in Phase 1 (DECISIONS.md
-// D2/D3/D4). For now we only need: stable row ids (D2), a push-model accessor (D3), and
-// enough columns/rows to stress virtualization (100k x 1k).
+// Uses the real `Column<T>` contract from core/types (Phase 1) so the fixtures double as a
+// compile-time check on the schema. We need: stable row ids (D2), a push-model accessor (D3),
+// and enough columns/rows to stress virtualization (100k x 1k).
 //
 // Memory note: we do NOT materialize 100k x 1k = 100M cell strings. Rows are tiny `{ id }`
 // objects and each column's accessor computes its display value deterministically on demand.
+
+import type { Column } from '../core/types'
 
 export interface DemoRow {
   id: number
 }
 
-export interface DemoColumn {
-  id: string
-  name: string
-  width: number
-  /** Push-model accessor (D3): derive the display string from the row. */
-  accessor: (row: DemoRow) => string
-}
+export type DemoColumn = Column<DemoRow>
+
+/** Width used by fixture columns and the placeholder layout when a column omits one. */
+export const DEFAULT_COL_WIDTH = 140
 
 const WORDS = [
   'alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel',
@@ -50,7 +49,7 @@ export function makeColumns(count: number): DemoColumn[] {
     cols[c] = {
       id: `c${c}`,
       name: `Col ${c}`,
-      width: 140,
+      width: DEFAULT_COL_WIDTH,
       accessor: (row) => {
         const h = hash(row.id * 1_000_003 + colIndex)
         switch (colIndex % 3) {
