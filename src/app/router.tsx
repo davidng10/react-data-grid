@@ -1,12 +1,11 @@
-import { createBrowserRouter } from 'react-router'
-import { Home } from '../playground/pages/Home'
-import { DomPlayground } from '../playground/pages/DomPlayground'
+import { createBrowserRouter } from "react-router";
+import { Home } from "../playground/pages/Home";
+import { GridPlayground } from "../playground/pages/GridPlayground";
 
-// Phase 0 router. As shells land they get their own routes:
-//   /dom        — the DOM shell (active; the committed architecture)
-//   /css-grid   — deferred comparison shell (DECISIONS.md D5)
-//   /canvas     — deferred "future spike" (DECISIONS.md D0)
+// Routes:
+//   /       — landing
+//   /grid   — the grid playground (committed DOM architecture)
 export const router = createBrowserRouter([
-  { path: '/', element: <Home /> },
-  { path: '/dom', element: <DomPlayground /> },
-])
+  { path: "/", element: <Home /> },
+  { path: "/grid", element: <GridPlayground /> },
+]);

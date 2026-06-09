@@ -1,10 +1,9 @@
 import { useFps } from './useFps'
+import type { GridStats } from '../grid/DataGrid'
 
 interface PerfOverlayProps {
-  rows?: number
-  cols?: number
-  /** Cells actually mounted in the DOM right now (set once virtualization exists). */
-  renderedCells?: number
+  /** Polled each meter render (~4 Hz) so scroll never drives parent setState (D1). */
+  getStats?: () => GridStats | null
 }
 
 function fpsColor(fps: number): string {
@@ -17,8 +16,12 @@ function fpsColor(fps: number): string {
  * Live perf meter (DECISIONS.md harness). Owns useFps so only this leaf re-renders at 4 Hz.
  * Pass row/col/rendered-cell counts from the grid once they exist.
  */
-export function PerfOverlay({ rows, cols, renderedCells }: PerfOverlayProps) {
+export function PerfOverlay({ getStats }: PerfOverlayProps) {
   const { fps, minFps, frameMs } = useFps()
+  const stats = getStats?.() ?? null
+  const rows = stats?.rows
+  const cols = stats?.cols
+  const renderedCells = stats?.renderedCells
 
   return (
     <div
