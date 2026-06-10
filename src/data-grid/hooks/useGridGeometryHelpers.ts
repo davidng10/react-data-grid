@@ -3,6 +3,7 @@ import type { CellCoord, Column, ColumnId } from "../core/types";
 import type { Zone } from "../core/selection/geometry";
 import { colIndexAtX, clampNum } from "../internal/layout";
 import type { ZoneLayout } from "../internal/layout";
+import { RESIZE_HANDLE_WIDTH } from "../internal/constants";
 import type { GridLayout } from "./useGridLayout";
 
 export interface GridGeometryHelpers<T> {
@@ -11,6 +12,19 @@ export interface GridGeometryHelpers<T> {
     clientX: number,
     clientY: number,
   ) => { columnId: ColumnId; zone: Zone; sourceIndex: number } | null;
+  /** Map a header-strip point near a column's right boundary to that column's resize handle (D12). */
+  headerResizeHitTest: (
+    clientX: number,
+    clientY: number,
+  ) => {
+    columnId: ColumnId;
+    zone: Zone;
+    localIndex: number;
+    /** The column's current width (the resize start width). */
+    startWidth: number;
+    /** Zone-local x of the column's right boundary (the initial guide-line position). */
+    boundaryX: number;
+  } | null;
   layoutFor: (zone: Zone) => ZoneLayout;
   zoneColsFor: (zone: Zone) => Column<T>[];
   zoneLocalXFor: (zone: Zone, clientX: number) => number;
@@ -122,6 +136,60 @@ export function useGridGeometryHelpers<T>(args: {
     return { columnId: col.id, zone, sourceIndex: i };
   };
 
+  // Map a header-strip point to a column resize handle (D12): the pointer must be within
+  // RESIZE_HANDLE_WIDTH of a column's RIGHT boundary, and a boundary belongs to the column on its
+  // LEFT — that's the one a drag resizes. Mirrors `headerHitTest`'s zone banding (only the center
+  // adds `scrollLeft`). `type: 'action'` / `resizable: false` columns are inert (no handle), exactly
+  // as they're inert for reorder.
+  const headerResizeHitTest = (clientX: number, clientY: number) => {
+    const el = scrollRef.current;
+    if (!el || columnOrder.length === 0) return null;
+    const rect = el.getBoundingClientRect();
+
+    const vpY = clientY - rect.top;
+    if (vpY < 0 || vpY >= rowHeight) return null; // only the header strip
+
+    const localX = clientX - rect.left;
+    const viewportW = el.clientWidth;
+    if (gutterW > 0 && localX < gutterW) return null; // over the checkbox gutter
+
+    let cols: Column<T>[];
+    let zl: ZoneLayout;
+    let zoneX: number;
+    let zone: Zone;
+    if (left.total > 0 && localX < leftBand) {
+      cols = zones.left;
+      zl = left;
+      zoneX = localX - gutterW;
+      zone = "left";
+    } else if (right.total > 0 && localX >= viewportW - right.total) {
+      cols = zones.right;
+      zl = right;
+      zoneX = localX - (viewportW - right.total);
+      zone = "right";
+    } else {
+      cols = zones.center;
+      zl = center;
+      zoneX = localX - leftBand + el.scrollLeft;
+      zone = "center";
+    }
+    if (cols.length === 0) return null;
+
+    // The pointer can sit just inside the column whose right edge it's near, or just past that
+    // boundary in the next column — so test the column containing zoneX and its left neighbour.
+    const i = colIndexAtX(zl.offsets, zoneX);
+    for (const c of [i, i - 1]) {
+      if (c < 0 || c >= cols.length) continue;
+      const boundaryX = zl.offsets[c] + zl.widths[c];
+      if (Math.abs(zoneX - boundaryX) <= RESIZE_HANDLE_WIDTH) {
+        const col = cols[c];
+        if (!col || col.type === "action" || col.resizable === false) return null;
+        return { columnId: col.id, zone, localIndex: c, startWidth: zl.widths[c], boundaryX };
+      }
+    }
+    return null;
+  };
+
   // The ZoneLayout for a zone (offsets/widths/total) — drives the drop-index geometry.
   const layoutFor = (zone: Zone) =>
     zone === "left" ? left : zone === "right" ? right : center;
@@ -171,6 +239,7 @@ export function useGridGeometryHelpers<T>(args: {
   return {
     hitTest,
     headerHitTest,
+    headerResizeHitTest,
     layoutFor,
     zoneColsFor,
     zoneLocalXFor,

@@ -68,10 +68,18 @@ export interface Column<T> {
   /** Push-model value access (D3). */
   accessor: (row: T) => unknown
 
-  // Layout (D5). Width undefined => flex remainder (R2).
+  // Layout (D5 / D12). `width` is the column's CURRENT width, consumer-controlled via the columns
+  // array — the grid holds no width state; a resize emits `onColumnResize` and the consumer feeds
+  // the new width back here (and persists it). Effective width = clamp(width ?? default, minWidth,
+  // maxWidth), so the constraints below always hold. minWidth === maxWidth pins a column to a fixed
+  // width (no resize travel). Width undefined => DEFAULT_COL_WIDTH.
   width?: number
+  /** Resize floor in px. Default MIN_COL_WIDTH. */
   minWidth?: number
+  /** Resize ceiling in px. Default unbounded. */
   maxWidth?: number
+  /** Opt out of column resizing (D12). Default true; `type: 'action'` columns are always inert. */
+  resizable?: boolean
   frozen?: FrozenZone
 
   // Type + editing (D4 / R4).

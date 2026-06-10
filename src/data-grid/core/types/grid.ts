@@ -55,6 +55,12 @@ export interface GridProps<T> {
   columnOrder?: ColumnId[]
   onColumnOrderChange?: (order: ColumnId[]) => void
 
+  // Column resize (D12) — on by default, UNCONTROLLED: `column.width` is the base/initial width and
+  // the grid owns in-session resizes, so resize works with no wiring. `onColumnResize` fires for
+  // optional persistence. Controlled widths + reset (a `columnWidths` prop) are deferred.
+  enableColumnResize?: boolean
+  onColumnResize?: (columnId: ColumnId, width: number) => void
+
   // Styling (D7).
   className?: string
   style?: CSSProperties

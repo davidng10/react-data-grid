@@ -196,8 +196,7 @@ export function GridPlayground() {
             color: "#166534",
           }}
         >
-          PHASE 7 · reorder ({STRESS.rows.toLocaleString()}×
-          {STRESS.cols.toLocaleString()})
+          ({STRESS.rows.toLocaleString()}×{STRESS.cols.toLocaleString()})
         </span>
         <span style={{ fontSize: 11, color: "#78716c" }}>
           drag a column header to reorder (within its frozen zone) · Enter/click

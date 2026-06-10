@@ -28,8 +28,10 @@
 > sustained 100k×1k scroll holds ~70 avg with the body not re-rendering on the edit path; transient
 > GC dips (3s rolling-min to ~37) recover immediately, no visible latency — parity with P3.
 > **Phase 7** (column drag-reorder, R3/D5) **is complete & verified — see D11** (header drag, controlled
-order, within-zone only, action-column barriers, edge auto-scroll). **Next: Phase 8** (expandable
-rows, R1). **Earlier (P5, complete & verified in the prod build):**
+order, within-zone only, action-column barriers, edge auto-scroll). **Column resize (D12)** has since
+landed — a header-edge drag with a full-height guide line, **on by default** and **uncontrolled** (the
+grid owns width so it just works; `onColumnResize` notifies for persistence); controlled widths + reset
+are deferred. **Next: Phase 8** (expandable rows, R1). **Earlier (P5, complete & verified in the prod build):**
 > cell focus + range selection drawn as per-zone **overlay rectangles** (D6 — never per-cell
 > flags); click/drag select including cross-zone splits (left↔center↔right, both directions,
 > confirmed by DOM measurement); keyboard arrows, Shift+arrow extend (anchor held), Cmd/Ctrl+arrow
@@ -425,6 +427,72 @@ nudges the indicator re-renders only that leaf — the windowed body never re-re
   rejection, action-column barrier, and the grab/grabbing cursor all confirmed.
 - **Not done in P7.** **Keyboard** reordering (a11y) is deferred to P9. `DataGridProps` ↔ `GridProps`
   remain only partially reconciled — P7 added `columnOrder`/`onColumnOrderChange` to `DataGridProps`.
+
+---
+
+## D12. Column resize: header-edge drag → uncontrolled width (extends D5/D11)
+
+**Decision.** Drag a column's **right-edge handle** to resize it, reusing the same store + overlay
+mechanism as selection/reorder/edit (D6/D10/D11): a fifth plain-TS **resize store**
+(`core/store/resize-store.ts`) holds the in-flight drag, and a per-zone **`ResizeOverlay`** leaf
+`useSyncExternalStore`-subscribes and draws a **full-height guide line** at the prospective right
+edge. `DataGrid` never subscribes, so every pointermove that moves the guide re-renders only that
+leaf — the windowed body is untouched during the drag. It is **D11's reorder gesture rotated 90°.**
+
+- **Uncontrolled, ON by default — deliberately UNLIKE reorder (R3/D11).** `enableColumnResize`
+  defaults `true`. `column.width` is the **base/initial** width; the grid owns in-session resizes in
+  **internal state** (`internalWidths`, layered over `column.width`), so resize **just works with
+  zero wiring**. `onColumnResize(id, width)` fires for **optional** persistence (save it; reseed
+  `column.width` on next mount). This diverges from order, which is controlled-only: "drag an edge
+  and it stays" is a far stronger default expectation than reorder, and — unlike order — the
+  persistence story works fine uncontrolled (seed-from-storage + notify; the prop never needs to be
+  authoritative mid-session). This mirrors **selection's** uncontrolled+notify model, not order's.
+
+- **Width stays `column.width` — no second width prop.** A separate `columnWidths` prop *coexisting*
+  with `column.width` was **considered and rejected**: two map/field knobs both meaning "width," with
+  a precedence rule the names don't telegraph (`defaultValue`/`value` only reads as obvious because
+  those names are conventions). `min`/`maxWidth` stay on the column as **static constraints**;
+  `minWidth === maxWidth` pins a column to a fixed width (no drag travel). Effective width =
+  `clamp(override ?? column.width ?? DEFAULT, minWidth, maxWidth)`, applied in `zoneLayout` via a
+  `widthOf` resolver, so the clamp holds at layout time and the resize drag clamps to the same bounds.
+
+- **Commit-on-release, not live resize.** During the drag only the `ResizeOverlay` guide line moves
+  (overlay-only, D1/D6); the width changes **once, on pointerup** → a single relayout (re-derive +
+  `colVirtualizer.measure()`). Live resize (the column growing every frame) was **declined**: it
+  re-renders the ~500 windowed cells per pointermove, squarely on the golden-rule hot path, and would
+  need its own FPS gate. The guide line gives the same UX guarantee as the reorder drop-indicator.
+  Only cells **at/right of** the resized column re-render on commit (changed `x`/`width`); cells to
+  the left are skipped by the `Cell` memo (keyed on computed `content` + geometry, not column identity).
+
+- **Resize wins over reorder in the pointer chain.** The handle is a thin strip
+  (`RESIZE_HANDLE_WIDTH`) straddling a column boundary — a *subset* of the header — so the resize
+  hit-test gets **first refusal** (`colResize → colDrag → dragSelect`); reorder owns the rest of the
+  header. `headerResizeHitTest` is zone-banded like `headerHitTest` (only the center adds
+  `scrollLeft`), and a boundary belongs to the column on its **left** (the one a drag resizes).
+
+- **`type: 'action'` / `resizable: false` columns are inert** (no handle, not grabbable) — same
+  treatment as reorder (D11). `resizable` is a per-column opt-out; `enableColumnResize={false}` is the
+  global off switch.
+
+- **Controlled widths + reset: DEFERRED (decided, not forgotten).** A **reset** ("clear resize
+  overrides → back to defaults") structurally needs the overrides to be a layer *separate* from the
+  defaults — i.e. a controlled `columnWidths` prop (`column.width` = defaults, `columnWidths` =
+  current; reset = `setColumnWidths({})`). Deriving controlled state from `column.width` instead was
+  **rejected**: a reset to the same default value isn't a detectable prop change, and one field can't
+  be both "factory default" and "persisted current." So reset waits for the controlled prop, which is
+  deferred until a concrete need (revisit alongside **controlled row selection**, the sibling
+  uncontrolled→controlled upgrade also deferred).
+
+- **Pure, unit-tested.** Clamp via `clampNum`; the resize store has its own `resize-store.test.ts`
+  (idle ⇄ resizing, indicator dedup); interaction tests cover uncontrolled-applies, clamp to
+  min/max, bare-press no-op, resize-beats-reorder, `resizable:false`, `enableColumnResize={false}`,
+  and the `col-resize` cursor.
+
+- **Not done.** Edge auto-scroll while dragging a column wider than the viewport (reorder has it;
+  resize can borrow the same RAF). **Double-click-to-autofit** (would measure only the *visible* rows
+  — against D4's "never measure every cell" — so deferred rather than half-built). **Keyboard**
+  resize (a11y, P9). A **`:hover` affordance** on the handle needs the D7 stylesheet (inline styles
+  can't express pseudo-states) — deferred with the rest of D7.
 
 ---
 

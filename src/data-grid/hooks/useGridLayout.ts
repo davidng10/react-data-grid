@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import type { RefObject } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { VirtualItem } from "@tanstack/react-virtual";
@@ -8,9 +8,9 @@ import type {
   GridGeometry,
   Zone,
 } from "../core/selection/geometry";
-import { zoneLayout } from "../internal/layout";
+import { zoneLayout, clampNum } from "../internal/layout";
 import type { ZoneLayout } from "../internal/layout";
-import { GUTTER_WIDTH } from "../internal/constants";
+import { DEFAULT_COL_WIDTH, GUTTER_WIDTH, MIN_COL_WIDTH } from "../internal/constants";
 
 type CellPlacement = ColumnPlacement & { localIndex: number };
 
@@ -41,6 +41,11 @@ export function useGridLayout<T>(args: {
   columns: Column<T>[];
   /** The controlled `columnOrder` prop (R3); undefined ⇒ source order. */
   columnOrder?: ColumnId[];
+  /**
+   * In-session resize width overrides keyed by column id (D12), layered over each column's base
+   * `width` — the grid's internal uncontrolled map. Columns absent here fall back to `column.width`.
+   */
+  widthOverrides?: Record<ColumnId, number>;
   rows: T[];
   rowHeight: number;
   overscanRows: number;
@@ -51,6 +56,7 @@ export function useGridLayout<T>(args: {
   const {
     columns,
     columnOrder: columnOrderProp,
+    widthOverrides,
     rows,
     rowHeight,
     overscanRows,
@@ -60,6 +66,20 @@ export function useGridLayout<T>(args: {
   } = args;
 
   const gutterW = enableRowSelection ? GUTTER_WIDTH : 0;
+
+  // Effective width per column (D12): the in-session resize override (`widthOverrides[id]`) layered
+  // over the column's base `width`, falling back to the default, then clamped to the static
+  // [minWidth, maxWidth] so an out-of-range value can never render. Stable per `widthOverrides` so
+  // the zone memos below only recompute when the override map changes (a resize commit) or columns do.
+  const widthOf = useCallback(
+    (c: Column<T>) =>
+      clampNum(
+        widthOverrides?.[c.id] ?? c.width ?? DEFAULT_COL_WIDTH,
+        c.minWidth ?? MIN_COL_WIDTH,
+        c.maxWidth ?? Infinity,
+      ),
+    [widthOverrides],
+  );
 
   // Apply the controlled `columnOrder` (R3) before zoning: a stable sort by the id's position in
   // the prop (unknown ids keep their original relative order, sorted to the end). `frozen` still
@@ -91,9 +111,9 @@ export function useGridLayout<T>(args: {
     return { left, center, right };
   }, [ordered]);
 
-  const left = useMemo(() => zoneLayout(zones.left), [zones.left]);
-  const center = useMemo(() => zoneLayout(zones.center), [zones.center]);
-  const right = useMemo(() => zoneLayout(zones.right), [zones.right]);
+  const left = useMemo(() => zoneLayout(zones.left, widthOf), [zones.left, widthOf]);
+  const center = useMemo(() => zoneLayout(zones.center, widthOf), [zones.center, widthOf]);
+  const right = useMemo(() => zoneLayout(zones.right, widthOf), [zones.right, widthOf]);
 
   // Content x where the left frozen zone begins (after the gutter) and where the center begins
   // (after gutter + left zone). The column virtualizer's window must be offset by the latter.

@@ -345,6 +345,8 @@ frozen zone then sticks at `left: gutterW` so it sits just right of the gutter; 
 | **Selection change → consumer** | nothing in `DataGrid`                    | `onSelectionChange` fires from a plain store subscription (an effect), not React state.                   |
 | **Edit: open / keystroke** | only the `EditorPortal` leaf               | Draft lives in the edit store; `DataGrid` never subscribes. The portal repositions on scroll *imperatively* (ref transform), so even scrolling-while-editing doesn't re-render the body (§11). |
 | **Commit: saving / success / error** | only the `PendingOverlay` leaves   | The editor closes on commit; the optimistic value + spinner / red-flash live in the pending store, drawn by the per-zone overlay. Body untouched (§11). |
+| **Resize: dragging** | only the `ResizeOverlay` leaf | The guide line lives in the resize store; `DataGrid` never subscribes, so each pointermove redraws one line — the body is untouched (§12). |
+| **Resize: commit (release)** | `DataGrid` body, once | One relayout on pointerup (re-derive + `colVirtualizer.measure()`); only cells **at/right** of the resized column repaint, the rest skip the `Cell` memo. Off the per-move path (§12). |
 
 
 The golden rule (D1): **scroll, drag, and hover never set React state on the per-cell render path.**
@@ -505,3 +507,56 @@ focus to the scroll container so keyboard nav resumes; a later failure reverts +
 > control inside a cell should `stopPropagation` on pointerdown (so the click doesn't trip cell
 > focus/edit) and `preventDefault` on mousedown (so it doesn't steal keyboard focus from the grid).
 > Still deferred: the full D7 `data-*` styling surface (P9).
+
+---
+
+## 12. Column resize (D12)
+
+Resize is **§7's reorder gesture rotated 90°** — the same plain-TS store + memo'd overlay leaf, so
+the windowed body is never on the per-move path. Four pieces, all mirroring the drag-reorder ones:
+
+**The resize store** (`core/store/resize-store.ts`) — the fifth D1 store, a sibling of the drag
+store. It holds only the in-flight guide-line position (`{ status: 'resizing', columnId, zone,
+indicatorX }`), with the same same-value dedup on `setIndicator` so an unchanged move doesn't
+re-render the overlay. **`DataGrid` never subscribes** — only `ResizeOverlay` does.
+
+**`ResizeOverlay`** (`components/ResizeOverlay.tsx`) — the resize counterpart of `DragOverlay`, one
+leaf per zone. Unlike the reorder indicator (header-only), it draws a **full-height** vertical guide
+line (header + body) so you see where the new right edge lands across every row. It's mounted **inside
+the zone container** (a sibling of the header strip + body), positioned at **zone-local x** — the same
+coordinate space as the cells (§4) — so it pins/scrolls with its zone for free, and a zone only paints
+while *its* column is the one resizing.
+
+**`headerResizeHitTest`** (`hooks/useGridGeometryHelpers.ts`) — the inverse-layout reader, mirroring
+`headerHitTest`'s zone banding (only the center adds `scrollLeft`). It matches a pointer within
+`RESIZE_HANDLE_WIDTH` of a column **right boundary**; a boundary belongs to the column on its **left**
+(the one a drag resizes). `type: 'action'` / `resizable: false` columns return `null` (inert, like
+reorder).
+
+**`useColumnResize`** (`hooks/useColumnResize.ts`) — the gesture. **Commit-on-release:** pointerdown
+on a handle starts the store + captures the pointer (forcing `cursor: col-resize` on the capture
+target); each move computes `width = clamp(startWidth + dx, min, max)` and updates *only* the guide
+line; pointerup **commits once** via `onCommit(id, width)` (skipped if the width didn't change — a bare
+click is a no-op). The column's left edge is fixed for the whole gesture, so the guide sits at
+`colOffset + width`. Like the other gestures it returns a **"consumed" flag** so the shell composes it
+**first** in the pointer chain (`colResize → colDrag → dragSelect`): the handle strip is a subset of
+the header, so resize must claim the edge before reorder claims the rest.
+
+**Width is uncontrolled (D12), and it flows through `widthOf`.** `DataGrid` owns an `internalWidths`
+map; `commitResize` writes it (and fires the optional `onColumnResize`). That map is handed to
+`useGridLayout` as `widthOverrides`, where the `widthOf` resolver computes each column's effective
+width — `clamp(widthOverrides[id] ?? column.width ?? DEFAULT, minWidth, maxWidth)` — and feeds it to
+`zoneLayout`. Because **everything downstream derives from the zone layouts** — `offsets`,
+`placementMap`, `geom`, the column virtualizer's `estimateSize`, the selection/pending overlay rects,
+and the editor's `cellViewportRect` — a committed width re-flows the entire grid correctly from one
+place. The commit is **one relayout** (the `colVirtualizer.measure()` effect re-fires on the changed
+`center.widths`); the body repaints, but only cells **at/right** of the resized column actually
+re-render — those to the left keep the same `content`/`x`/`width`, so the `Cell` memo skips them (§9).
+
+> `enableColumnResize` (default **on**) is the global gate; per-column `resizable: false` and
+> `type: 'action'` opt out. `column.width` is the **base/initial** width — the grid layers in-session
+> resizes over it, so resize works with zero wiring; `onColumnResize` is there purely to persist.
+> **Controlled widths + reset** (a `columnWidths` prop where reset = `setColumnWidths({})`) are
+> deferred (see D12): reset needs an override layer distinct from the defaults, which the uncontrolled
+> single-`column.width` model can't express — revisit with controlled row selection. A **`:hover`**
+> affordance on the handle also waits on the D7 stylesheet (inline styles can't do pseudo-states).

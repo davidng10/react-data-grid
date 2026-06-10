@@ -119,7 +119,8 @@ export function useCellEditing<T>(args: {
       commit: () => {},
       cancel: () => {},
       status: "editing",
-      width: col.width ?? DEFAULT_COL_WIDTH,
+      // Resolved current width (D12) — a column has no static width; placement carries the live one.
+      width: geom.placement(cell.columnId)?.width ?? DEFAULT_COL_WIDTH,
       height: rowHeight,
     };
     const nextValue = col.parseValue ? col.parseValue(draft, editCtx) : draft;

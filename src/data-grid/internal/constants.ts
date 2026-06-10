@@ -4,6 +4,8 @@
 export const DEFAULT_ROW_HEIGHT = 32;
 export const DEFAULT_COL_WIDTH = 140;
 export const GUTTER_WIDTH = 40;
+export const DEFAULT_OVERSCAN_COLS = 2;
+export const DEFAULT_OVERSCAN_ROWS = 6;
 
 export const HEADER_BG = "#f5f5f4";
 export const HEADER_BORDER = "1px solid #d6d3d1";
@@ -28,3 +30,10 @@ export const EDGE_SPEED = 22;
 // plain header click isn't swallowed). The drop indicator is a 2px line in the header strip.
 export const DRAG_THRESHOLD = 4;
 export const DROP_LINE_COLOR = "#2563eb";
+
+// Column resize (P-resize / D12). The grab strip at each header's right edge (px on each side of the
+// boundary); the floor a column can be dragged down to; and the full-height guide line drawn while
+// resizing (a 2px line in zone-local coords, like the reorder drop indicator).
+export const RESIZE_HANDLE_WIDTH = 6;
+export const MIN_COL_WIDTH = 48;
+export const RESIZE_LINE_COLOR = "#2563eb";

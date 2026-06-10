@@ -9,8 +9,14 @@ export interface ZoneLayout {
   total: number;
 }
 
-export function zoneLayout<T>(cols: Column<T>[]): ZoneLayout {
-  const widths = cols.map((c) => c.width ?? DEFAULT_COL_WIDTH);
+// `widthOf` resolves each column's effective width (D12) — it lets the caller layer the grid's
+// internal (uncontrolled) resize override over the column's base `width`, plus the min/max clamp.
+// Defaults to the base width for any non-resize caller.
+export function zoneLayout<T>(
+  cols: Column<T>[],
+  widthOf: (col: Column<T>) => number = (c) => c.width ?? DEFAULT_COL_WIDTH,
+): ZoneLayout {
+  const widths = cols.map(widthOf);
   const offsets = new Array<number>(widths.length);
   let acc = 0;
   for (let i = 0; i < widths.length; i++) {

@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type {
-  CSSProperties,
-  PointerEvent as ReactPointerEvent,
-} from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import type {
   CellCommit,
   Column,
@@ -16,6 +13,7 @@ import { createGridStore } from "./core/store/grid-store";
 import { createEditStore } from "./core/store/edit-store";
 import { createPendingStore } from "./core/store/pending-store";
 import { createDragStore } from "./core/store/drag-store";
+import { createResizeStore } from "./core/store/resize-store";
 import { EditorPortal } from "./editors/EditorPortal";
 import { PendingOverlay } from "./editors/PendingOverlay";
 import {
@@ -23,6 +21,8 @@ import {
   HEADER_BG,
   HEADER_BORDER,
   FROZEN_BG,
+  DEFAULT_OVERSCAN_COLS,
+  DEFAULT_OVERSCAN_ROWS,
 } from "./internal/constants";
 import { FREEZE_DIVIDER_LEFT, FREEZE_DIVIDER_RIGHT } from "./internal/style";
 import type { ZoneLayout } from "./internal/layout";
@@ -30,6 +30,7 @@ import { readContent } from "./internal/read-content";
 import { Cell } from "./components/Cell";
 import { HeaderCell } from "./components/HeaderCell";
 import { DragOverlay } from "./components/DragOverlay";
+import { ResizeOverlay } from "./components/ResizeOverlay";
 import { RowGutter } from "./components/RowGutter";
 import { SelectionOverlay } from "./components/SelectionOverlay";
 import { useGridLayout } from "./hooks/useGridLayout";
@@ -37,6 +38,7 @@ import { useGridGeometryHelpers } from "./hooks/useGridGeometryHelpers";
 import { useCellEditing } from "./hooks/useCellEditing";
 import { useGridKeyboard } from "./hooks/useGridKeyboard";
 import { useColumnDrag } from "./hooks/useColumnDrag";
+import { useColumnResize } from "./hooks/useColumnResize";
 import { useDragSelect } from "./hooks/useDragSelect";
 
 // The grid shell (DOM-rendered). DECISIONS.md D5/D8/D9 + frozen zones (P4) + selection (P5).
@@ -83,6 +85,14 @@ export interface DataGridProps<T> {
   /** Emitted with the new full id order when a within-zone column drag-reorder completes (P7/D5). */
   onColumnOrderChange?: (order: ColumnId[]) => void;
   /**
+   * Column resize (D12) — **on by default**, UNCONTROLLED. `column.width` is the base/initial width;
+   * the grid owns in-session resizes internally, so resize just works with zero wiring. Set `false`
+   * to disable globally, or per-column `resizable: false`. (Controlled widths + reset are deferred.)
+   */
+  enableColumnResize?: boolean;
+  /** Fires on each resize commit with the new clamped width — wire it to persist (D12). */
+  onColumnResize?: (columnId: ColumnId, width: number) => void;
+  /**
    * Commit handler fallback when a column has no own `onCommit` (R4). Receives the parsed
    * `nextValue`; the consumer persists it and feeds it back as new `rows` (the grid never mutates
    * row data). Return a promise to drive the editor's `submitting`/`error` states.
@@ -105,12 +115,14 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     columns,
     getRowId,
     rowHeight = DEFAULT_ROW_HEIGHT,
-    overscanRows = 6,
-    overscanCols = 2,
+    overscanRows = DEFAULT_OVERSCAN_ROWS,
+    overscanCols = DEFAULT_OVERSCAN_COLS,
     enableRowSelection = false,
     onSelectionChange,
     columnOrder: columnOrderProp,
     onColumnOrderChange,
+    enableColumnResize = true,
+    onColumnResize,
     onCellCommit,
     editorClassName,
     editorStyle,
@@ -122,15 +134,31 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   const [editStore] = useState(() => createEditStore());
   const [pendingStore] = useState(() => createPendingStore());
   const [dragStore] = useState(() => createDragStore());
+  const [resizeStore] = useState(() => createResizeStore());
 
   // Drag-reorder is enabled only when the consumer can persist the result (it's controlled, R3): no
   // handler ⇒ no drag, no grab cursor. Gates both the interaction and the header affordance.
   const reorderable = !!onColumnOrderChange;
 
+  // Column resize (D12) — ON by default, UNCONTROLLED. `column.width` is the base/initial width; the
+  // grid owns in-session resizes in `internalWidths` (layered over `column.width`), so resize just
+  // works with zero wiring — one relayout per commit. `onColumnResize` fires for optional persistence
+  // (save it, reseed `column.width` on next mount). Controlled widths + reset (a `columnWidths` prop)
+  // are deferred — revisit when there's a concrete need.
+  const resizeEnabled = enableColumnResize;
+  const [internalWidths, setInternalWidths] = useState<
+    Record<ColumnId, number>
+  >({});
+  const commitResize = (columnId: ColumnId, width: number) => {
+    setInternalWidths((prev) => ({ ...prev, [columnId]: width }));
+    onColumnResize?.(columnId, width);
+  };
+
   // All pure layout/geometry derivation + the row/column virtualizers (D5/D8).
   const layout = useGridLayout({
     columns,
     columnOrder: columnOrderProp,
+    widthOverrides: internalWidths,
     rows,
     rowHeight,
     overscanRows,
@@ -178,7 +206,12 @@ export function DataGrid<T>(props: DataGridProps<T>) {
 
   // Live-DOM geometry readers (hit-testing, per-zone layout, scroll-into-view) shared by the
   // interaction hooks below.
-  const helpers = useGridGeometryHelpers({ scrollRef, layout, rows, rowHeight });
+  const helpers = useGridGeometryHelpers({
+    scrollRef,
+    layout,
+    rows,
+    rowHeight,
+  });
   const { scrollCellIntoView } = helpers;
 
   // --- editing (D4/R4/R5): triggers + commit orchestration → the edit store (→ EditorPortal) ---
@@ -211,6 +244,16 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     helpers,
     onColumnOrderChange,
   });
+  // Column resize (D12): a header-edge drag. Gets FIRST refusal in the pointer chain — its hot zone
+  // is a thin strip at the boundary, a subset of the header, so it must claim the gesture before the
+  // reorder grab (which owns the rest of the header) and the cell drag-select.
+  const colResize = useColumnResize({
+    enabled: resizeEnabled,
+    resizeStore,
+    scrollRef,
+    helpers,
+    onCommit: commitResize,
+  });
   const dragSel = useDragSelect({
     store,
     scrollRef,
@@ -222,18 +265,24 @@ export function DataGrid<T>(props: DataGridProps<T>) {
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
+    if (colResize.onPointerDown(e)) return;
     if (colDrag.onPointerDown(e)) return;
     dragSel.onPointerDown(e);
   };
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (colResize.onPointerMove(e)) return;
     if (colDrag.onPointerMove(e)) return;
     dragSel.onPointerMove(e);
   };
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (colResize.onPointerUp(e)) return;
     if (colDrag.onPointerUp(e)) return;
     dragSel.onPointerUp(e);
   };
-  const onLostPointerCapture = colDrag.onLostPointerCapture;
+  const onLostPointerCapture = () => {
+    colResize.onLostPointerCapture();
+    colDrag.onLostPointerCapture();
+  };
 
   const { onKeyDown } = useGridKeyboard({
     store,
@@ -289,9 +338,18 @@ export function DataGrid<T>(props: DataGridProps<T>) {
               height={rowHeight}
               frozen={side}
               draggable={reorderable && col.type !== "action"}
+              resizable={
+                resizeEnabled &&
+                col.type !== "action" &&
+                col.resizable !== false
+              }
             />
           ))}
-          <DragOverlay zone={side} dragStore={dragStore} rowHeight={rowHeight} />
+          <DragOverlay
+            zone={side}
+            dragStore={dragStore}
+            rowHeight={rowHeight}
+          />
         </div>
         <div
           style={{
@@ -315,9 +373,19 @@ export function DataGrid<T>(props: DataGridProps<T>) {
               />
             ));
           })}
-          <SelectionOverlay zone={side} store={store} editStore={editStore} geom={geom} />
+          <SelectionOverlay
+            zone={side}
+            store={store}
+            editStore={editStore}
+            geom={geom}
+          />
           <PendingOverlay zone={side} pendingStore={pendingStore} geom={geom} />
         </div>
+        <ResizeOverlay
+          zone={side}
+          resizeStore={resizeStore}
+          height={rowHeight + totalHeight}
+        />
       </div>
     );
   };
@@ -392,6 +460,11 @@ export function DataGrid<T>(props: DataGridProps<T>) {
                     width={vc.size}
                     height={rowHeight}
                     draggable={reorderable && col.type !== "action"}
+                    resizable={
+                      resizeEnabled &&
+                      col.type !== "action" &&
+                      col.resizable !== false
+                    }
                   />
                 );
               })}
@@ -421,9 +494,23 @@ export function DataGrid<T>(props: DataGridProps<T>) {
                   );
                 });
               })}
-              <SelectionOverlay zone="center" store={store} editStore={editStore} geom={geom} />
-              <PendingOverlay zone="center" pendingStore={pendingStore} geom={geom} />
+              <SelectionOverlay
+                zone="center"
+                store={store}
+                editStore={editStore}
+                geom={geom}
+              />
+              <PendingOverlay
+                zone="center"
+                pendingStore={pendingStore}
+                geom={geom}
+              />
             </div>
+            <ResizeOverlay
+              zone="center"
+              resizeStore={resizeStore}
+              height={rowHeight + totalHeight}
+            />
           </div>
 
           {renderFrozen("right", zones.right, right)}
