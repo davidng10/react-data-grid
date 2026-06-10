@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createPendingStore } from './pending-store'
+import { createPendingStore } from '../core/store/pending-store'
 
 const A = { rowIndex: 1, columnId: 'c1' }
 const B = { rowIndex: 2, columnId: 'c1' }

@@ -55,6 +55,11 @@ rows, R1). **Earlier (P5, complete & verified in the prod build):**
 > `src/data-grid/data-grid.tsx`; types in `src/data-grid/core/types/`. The whole shippable grid is
 > the self-contained `src/data-grid/` folder (shadcn-registry style — consumers copy it and own it);
 > `src/playground/` + `src/app/` are the demo harness and are not part of the distributable.
+> **Tests** live in `src/data-grid/__tests__/` — the one non-shipping dir inside the folder, excluded
+> by the registry/publish step (the component source never imports it, so the shipped files are
+> self-contained regardless). They run as **two vitest projects** (`vitest.config.ts`): `core` —
+> plain-TS engine in Node, DOM-free (D1) — and `dom` — the React shell in jsdom (`*.test.tsx`), where
+> the grid's offset-derived geometry makes interactions testable by mocking only the scroll container.
 
 This is the living decision log for the data grid. It records **what was decided, why, and
 what is deferred**, so we don't re-litigate settled questions.

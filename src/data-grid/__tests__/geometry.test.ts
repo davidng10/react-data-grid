@@ -7,8 +7,8 @@ import {
   dropIndexAtX,
   dragBounds,
   reorderWithinZone,
-} from './geometry'
-import type { ColumnPlacement, GridGeometry, ViewportInfo, Zone } from './geometry'
+} from '../core/selection/geometry'
+import type { ColumnPlacement, GridGeometry, ViewportInfo, Zone } from '../core/selection/geometry'
 
 // A fixture grid: 1 frozen-left col, 3 center cols, 1 frozen-right col.
 //   visual order: L0 | C0 C1 C2 | R0

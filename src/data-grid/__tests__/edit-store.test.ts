@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createEditStore } from './edit-store'
+import { createEditStore } from '../core/store/edit-store'
 
 const CELL = { rowIndex: 3, columnId: 'c2' }
 

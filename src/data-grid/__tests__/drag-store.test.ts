@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createDragStore } from './drag-store'
+import { createDragStore } from '../core/store/drag-store'
 
 const START = {
   sourceColumnId: 'C1',
