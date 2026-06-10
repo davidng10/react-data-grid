@@ -1,0 +1,226 @@
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import '@testing-library/jest-dom/vitest'
+import { render, fireEvent, screen, act } from '@testing-library/react'
+import { DataGrid } from '../data-grid'
+import type { DataGridProps } from '../data-grid'
+import type { Column, GridSelection } from '../core/types'
+
+// Characterization tests for the interaction hot paths (RAF auto-scroll, lost-pointer-capture
+// cleanup, click-vs-drag disambiguation, and the renderedCells stat). These pin behavior that the
+// upcoming hook extraction (useColumnDrag / useDragSelect / useGridLayout) splits across files, so
+// they exist to fail loudly if the split changes any observable behavior. Same jsdom box model as
+// data-grid.behavior.test.tsx: rect mocked to {left:0, top:0, 1000×600}; header strip y∈[0,32),
+// row r y∈[32+r*32, …), 100px columns → c_i x∈[i*100, …).
+
+interface Row {
+  id: number
+  v: string
+}
+const ROWS: Row[] = Array.from({ length: 50 }, (_, i) => ({ id: i, v: `r${i}` }))
+
+const centerCols = (): Column<Row>[] => [
+  { id: 'c0', name: 'C0', width: 100, accessor: (r) => r.v },
+  { id: 'c1', name: 'C1', width: 100, accessor: (r) => r.v },
+  { id: 'c2', name: 'C2', width: 100, accessor: (r) => r.v },
+  { id: 'c3', name: 'C3', width: 100, accessor: (r) => r.v },
+]
+
+function renderGrid(props: Partial<DataGridProps<Row>> = {}) {
+  const result = render(
+    <DataGrid rows={ROWS} columns={centerCols()} getRowId={(r) => r.id} {...props} />,
+  )
+  const scroller = result.container.querySelector<HTMLElement>('[tabindex="0"]')
+  if (!scroller) throw new Error('scroll container not found')
+  return { ...result, scroller }
+}
+
+const down = (el: HTMLElement, x: number, y: number, init: Partial<PointerEventInit> = {}) =>
+  fireEvent.pointerDown(el, { clientX: x, clientY: y, button: 0, pointerId: 1, ...init })
+const move = (el: HTMLElement, x: number, y: number) =>
+  fireEvent.pointerMove(el, { clientX: x, clientY: y, pointerId: 1 })
+const up = (el: HTMLElement, x: number, y: number) =>
+  fireEvent.pointerUp(el, { clientX: x, clientY: y, pointerId: 1 })
+const click = (el: HTMLElement, x: number, y: number, init?: Partial<PointerEventInit>) => {
+  down(el, x, y, init)
+  up(el, x, y)
+}
+
+const lastSelection = (fn: ReturnType<typeof vi.fn>): GridSelection =>
+  fn.mock.calls.at(-1)![0] as GridSelection
+
+// jsdom's scrollTop/scrollLeft are unreliable across versions; install a real backing store on the
+// scroller so the grid's `el.scrollLeft += dx` is observable and feeds back into hitTest.
+function makeScrollable(el: HTMLElement) {
+  let top = 0
+  let left = 0
+  Object.defineProperty(el, 'scrollTop', { configurable: true, get: () => top, set: (v) => (top = v) })
+  Object.defineProperty(el, 'scrollLeft', { configurable: true, get: () => left, set: (v) => (left = v) })
+}
+
+// Deterministic rAF control: capture scheduled callbacks and run exactly one generation per flush.
+// The auto-scroll ticks re-`requestAnimationFrame(self)`, so each flush() runs one tick and queues
+// the next — mirroring a single animation frame.
+function installRaf() {
+  const queue = new Map<number, FrameRequestCallback>()
+  let id = 0
+  const origRaf = globalThis.requestAnimationFrame
+  const origCancel = globalThis.cancelAnimationFrame
+  globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+    id += 1
+    queue.set(id, cb)
+    return id as unknown as number
+  }) as typeof requestAnimationFrame
+  globalThis.cancelAnimationFrame = ((rid: number) => {
+    queue.delete(rid)
+  }) as typeof cancelAnimationFrame
+  const flush = () => {
+    const gen = [...queue.values()]
+    queue.clear()
+    act(() => {
+      for (const cb of gen) cb(0)
+    })
+  }
+  const restore = () => {
+    globalThis.requestAnimationFrame = origRaf
+    globalThis.cancelAnimationFrame = origCancel
+  }
+  return { flush, restore }
+}
+
+let raf: ReturnType<typeof installRaf> | null = null
+afterEach(() => {
+  raf?.restore()
+  raf = null
+})
+
+describe('drag-select auto-scroll (rAF hot path)', () => {
+  it('auto-scrolls and keeps extending while drag-selecting past the bottom edge', () => {
+    const onSel = vi.fn()
+    const { scroller } = renderGrid({ onSelectionChange: onSel })
+    makeScrollable(scroller)
+    raf = installRaf()
+
+    down(scroller, 50, 48) // c0 r0
+    move(scroller, 150, 200) // cross into another cell → movedRef true
+    move(scroller, 150, 590) // y > bottom(600) − EDGE_ZONE(48) → into the edge band
+    expect(scroller.scrollTop).toBe(0) // nothing scrolls until a frame ticks
+
+    raf.flush() // one autoScrollTick
+    expect(scroller.scrollTop).toBeGreaterThan(0)
+    expect(lastSelection(onSel).range).toBeTruthy()
+
+    up(scroller, 150, 590)
+  })
+
+  it('a stationary press on a frozen cell in the edge band does NOT auto-scroll (movedRef gate)', () => {
+    // Frozen-left columns sit IN the left edge band, so without the movedRef gate a plain click
+    // would auto-scroll every frame. This pins that gate (the subtle invariant, previously untested).
+    const cols: Column<Row>[] = [
+      { id: 'L0', name: 'L0', width: 100, frozen: 'left', accessor: (r) => r.v },
+      { id: 'L1', name: 'L1', width: 100, frozen: 'left', accessor: (r) => r.v },
+      { id: 'c0', name: 'C0', width: 100, accessor: (r) => r.v },
+    ]
+    const { scroller } = renderGrid({ columns: cols })
+    makeScrollable(scroller)
+    raf = installRaf()
+
+    down(scroller, 50, 48) // press a frozen-left cell, no movement
+    raf.flush()
+    raf.flush()
+    expect(scroller.scrollLeft).toBe(0)
+    expect(scroller.scrollTop).toBe(0)
+
+    up(scroller, 50, 48)
+  })
+})
+
+describe('column-drag auto-scroll + cleanup', () => {
+  // Wide center zone so columns overflow the 1000px viewport and edge auto-scroll has somewhere to go.
+  const wideCols = (): Column<Row>[] =>
+    Array.from({ length: 15 }, (_, i) => ({
+      id: `c${i}`,
+      name: `C${i}`,
+      width: 100,
+      accessor: (r: Row) => r.v,
+    }))
+
+  it('a center-column drag near the right edge ramps scrollLeft', () => {
+    const onColumnOrderChange = vi.fn()
+    const { scroller } = renderGrid({ columns: wideCols(), onColumnOrderChange })
+    makeScrollable(scroller)
+    raf = installRaf()
+
+    down(scroller, 50, 16) // grab C0 header
+    move(scroller, 60, 16) // cross DRAG_THRESHOLD → drag starts, schedules dragScrollTick
+    move(scroller, 980, 16) // into the right edge band (x > 1000 − 48)
+    expect(scroller.scrollLeft).toBe(0)
+
+    raf.flush() // one dragScrollTick
+    expect(scroller.scrollLeft).toBeGreaterThan(0)
+
+    up(scroller, 980, 16)
+    expect(onColumnOrderChange).toHaveBeenCalled()
+  })
+
+  it('lostpointercapture mid-drag resets the cursor and aborts the reorder', () => {
+    const onColumnOrderChange = vi.fn()
+    const { scroller } = renderGrid({ columns: wideCols(), onColumnOrderChange })
+
+    down(scroller, 50, 16) // grab C0
+    move(scroller, 80, 16) // start dragging
+    expect(scroller.style.cursor).toBe('grabbing')
+
+    fireEvent.lostPointerCapture(scroller)
+    expect(scroller.style.cursor).toBe('')
+
+    up(scroller, 80, 16) // the drag was aborted → no order change emitted
+    expect(onColumnOrderChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('click-to-edit vs drag-select disambiguation', () => {
+  const editableCols = (): Column<Row>[] => [
+    { id: 'c0', name: 'C0', width: 100, accessor: (r) => r.v, editable: true },
+    { id: 'c1', name: 'C1', width: 100, accessor: (r) => r.v },
+    { id: 'c2', name: 'C2', width: 100, accessor: (r) => r.v },
+    { id: 'c3', name: 'C3', width: 100, accessor: (r) => r.v },
+  ]
+
+  it('a clean second click on the focused cell opens the editor', () => {
+    const { scroller } = renderGrid({ columns: editableCols() })
+    click(scroller, 50, 48) // focus c0 r0
+    click(scroller, 50, 48) // second click, no drag → editor opens
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+  })
+
+  it('pressing the focused cell then dragging selects a range and does NOT open the editor', () => {
+    const onSel = vi.fn()
+    const { scroller } = renderGrid({ columns: editableCols(), onSelectionChange: onSel })
+    click(scroller, 50, 48) // focus c0 r0
+    down(scroller, 50, 48) // press the focused cell → edit candidate
+    move(scroller, 250, 112) // drag into c2 r2 → movedRef trips
+    up(scroller, 250, 112)
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(lastSelection(onSel).range).toBeTruthy()
+  })
+})
+
+describe('renderedCells stat', () => {
+  it('writes vRows × (left + vCols + right) to statsRef', () => {
+    // A small grid where every row and every column fits the viewport, so the virtualizer renders
+    // the full count: vRows = 5, vCols(center) = 1, plus 2 left + 1 right always-rendered.
+    const smallRows: Row[] = Array.from({ length: 5 }, (_, i) => ({ id: i, v: `r${i}` }))
+    const cols: Column<Row>[] = [
+      { id: 'L0', name: 'L0', width: 100, frozen: 'left', accessor: (r) => r.v },
+      { id: 'L1', name: 'L1', width: 100, frozen: 'left', accessor: (r) => r.v },
+      { id: 'c0', name: 'C0', width: 100, accessor: (r) => r.v },
+      { id: 'R0', name: 'R0', width: 100, frozen: 'right', accessor: (r) => r.v },
+    ]
+    const statsRef = { current: { rows: 0, cols: 0, renderedCells: 0 } }
+    render(<DataGrid rows={smallRows} columns={cols} getRowId={(r) => r.id} statsRef={statsRef} />)
+
+    expect(statsRef.current.rows).toBe(5)
+    expect(statsRef.current.cols).toBe(4)
+    expect(statsRef.current.renderedCells).toBe(5 * (2 + 1 + 1))
+  })
+})
