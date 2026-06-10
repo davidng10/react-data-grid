@@ -1,11 +1,9 @@
 import { createBrowserRouter } from "react-router";
-import { Home } from "../playground/pages/Home";
 import { GridPlayground } from "../playground/pages/GridPlayground";
 
 // Routes:
 //   /       — landing
 //   /grid   — the grid playground (committed DOM architecture)
 export const router = createBrowserRouter([
-  { path: "/", element: <Home /> },
-  { path: "/grid", element: <GridPlayground /> },
+  { path: "/", element: <GridPlayground /> },
 ]);

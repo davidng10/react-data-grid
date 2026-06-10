@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
 import { Button, Select } from "antd";
 import {
   makeColumns,
@@ -186,12 +185,6 @@ export function GridPlayground() {
           flex: "none",
         }}
       >
-        <Link
-          to="/"
-          style={{ fontSize: 13, color: "#4f46e5", textDecoration: "none" }}
-        >
-          ← home
-        </Link>
         <strong style={{ fontSize: 14 }}>Data grid</strong>
         <span
           style={{
