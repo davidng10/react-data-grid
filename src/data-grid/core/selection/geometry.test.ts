@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { stepCoord, rangeToZoneRects, cellToZoneRect, cellViewportRect } from './geometry'
-import type { ColumnPlacement, GridGeometry, ViewportInfo } from './geometry'
+import {
+  stepCoord,
+  rangeToZoneRects,
+  cellToZoneRect,
+  cellViewportRect,
+  dropIndexAtX,
+  dragBounds,
+  reorderWithinZone,
+} from './geometry'
+import type { ColumnPlacement, GridGeometry, ViewportInfo, Zone } from './geometry'
 
 // A fixture grid: 1 frozen-left col, 3 center cols, 1 frozen-right col.
 //   visual order: L0 | C0 C1 C2 | R0
@@ -180,5 +188,113 @@ describe('cellViewportRect', () => {
 
   it('returns null for an unknown column', () => {
     expect(cellViewportRect({ rowIndex: 0, columnId: 'ZZ' }, geom, baseView)).toBeNull()
+  })
+})
+
+describe('dropIndexAtX', () => {
+  // Three 100px-wide columns: offsets [0,100,200], boundaries at 0/100/200/300, midpoints 50/150/250.
+  const offsets = [0, 100, 200]
+  const widths = [100, 100, 100]
+
+  it('inserts before the first column when left of its midpoint', () => {
+    expect(dropIndexAtX(offsets, widths, 40)).toEqual({ index: 0, indicatorX: 0 })
+  })
+
+  it('inserts after a column once past its midpoint', () => {
+    expect(dropIndexAtX(offsets, widths, 60)).toEqual({ index: 1, indicatorX: 100 })
+    expect(dropIndexAtX(offsets, widths, 160)).toEqual({ index: 2, indicatorX: 200 })
+  })
+
+  it('inserts at the end (trailing boundary = total) past the last midpoint', () => {
+    expect(dropIndexAtX(offsets, widths, 260)).toEqual({ index: 3, indicatorX: 300 })
+  })
+
+  it('clamps to the end far past the last column', () => {
+    expect(dropIndexAtX(offsets, widths, 9999)).toEqual({ index: 3, indicatorX: 300 })
+  })
+
+  it('an empty zone is { index: 0, indicatorX: 0 }', () => {
+    expect(dropIndexAtX([], [], 123)).toEqual({ index: 0, indicatorX: 0 })
+  })
+
+  it('a single-column zone only resolves to index 0 or 1', () => {
+    expect(dropIndexAtX([0], [100], 40)).toEqual({ index: 0, indicatorX: 0 })
+    expect(dropIndexAtX([0], [100], 60)).toEqual({ index: 1, indicatorX: 100 })
+  })
+
+  it('clamps the index to bounds and pins the indicator at the barrier edge', () => {
+    // Two columns; a barrier sits after index 0, so the source may only land at [0,1].
+    // A pointer past the second column (raw index 2) clamps to 1, indicator at the boundary (100).
+    expect(dropIndexAtX([0, 100], [100, 100], 160, [0, 1])).toEqual({ index: 1, indicatorX: 100 })
+    // A pointer before everything (raw 0) with a left barrier at [1,2] clamps up to 1.
+    expect(dropIndexAtX([0, 100], [100, 100], 40, [1, 2])).toEqual({ index: 1, indicatorX: 100 })
+  })
+})
+
+describe('dragBounds', () => {
+  it('no barriers → the whole zone is in range', () => {
+    expect(dragBounds([false, false, false], 1)).toEqual([0, 3])
+  })
+
+  it('a trailing barrier caps the high bound (can’t cross to its right)', () => {
+    // [data, data, action]; dragging either data column can reach at most index 2 (before action).
+    expect(dragBounds([false, false, true], 0)).toEqual([0, 2])
+    expect(dragBounds([false, false, true], 1)).toEqual([0, 2])
+  })
+
+  it('a leading barrier raises the low bound (can’t cross to its left)', () => {
+    expect(dragBounds([true, false], 1)).toEqual([1, 2])
+  })
+
+  it('barriers on both sides lock the column in place', () => {
+    expect(dragBounds([true, false, true], 1)).toEqual([1, 2]) // only its own slot → no-op
+  })
+})
+
+describe('reorderWithinZone', () => {
+  // visual order: L0 L1 | C0 C1 C2 | R0  — two frozen-left, three center, one frozen-right.
+  const ORDER = ['L0', 'L1', 'C0', 'C1', 'C2', 'R0']
+  const ZONE: Record<string, Zone> = {
+    L0: 'left', L1: 'left', C0: 'center', C1: 'center', C2: 'center', R0: 'right',
+  }
+  const zoneOf = (id: string) => ZONE[id]
+
+  it('moves a center column to the end of its zone', () => {
+    // C0 dropped after C2 (insertion index 3 in the center slice).
+    expect(reorderWithinZone(ORDER, 'C0', 3, zoneOf)).toEqual(['L0', 'L1', 'C1', 'C2', 'C0', 'R0'])
+  })
+
+  it('moves a center column to the start of its zone', () => {
+    expect(reorderWithinZone(ORDER, 'C2', 0, zoneOf)).toEqual(['L0', 'L1', 'C2', 'C0', 'C1', 'R0'])
+  })
+
+  it('returns the SAME array reference on a drop-onto-self (both halves of the source)', () => {
+    // C1 is at center-local index 1; insertion index 1 (its left edge) and 2 (its right edge) both
+    // map back to its own slot after the splice-correction → no-op, same ref (caller skips callback).
+    expect(reorderWithinZone(ORDER, 'C1', 1, zoneOf)).toBe(ORDER)
+    expect(reorderWithinZone(ORDER, 'C1', 2, zoneOf)).toBe(ORDER)
+  })
+
+  it('reorders within a frozen zone, leaving the other zones untouched', () => {
+    expect(reorderWithinZone(ORDER, 'L1', 0, zoneOf)).toEqual(['L1', 'L0', 'C0', 'C1', 'C2', 'R0'])
+  })
+
+  it('never moves ids outside the source zone', () => {
+    const next = reorderWithinZone(ORDER, 'C0', 3, zoneOf)
+    expect(next.filter((id) => zoneOf(id) === 'left')).toEqual(['L0', 'L1'])
+    expect(next.filter((id) => zoneOf(id) === 'right')).toEqual(['R0'])
+  })
+
+  it('a single-column zone is always a same-ref no-op', () => {
+    expect(reorderWithinZone(ORDER, 'R0', 0, zoneOf)).toBe(ORDER)
+    expect(reorderWithinZone(ORDER, 'R0', 1, zoneOf)).toBe(ORDER)
+  })
+
+  it('clamps an out-of-range insertion index to the zone end', () => {
+    expect(reorderWithinZone(ORDER, 'C0', 99, zoneOf)).toEqual(['L0', 'L1', 'C1', 'C2', 'C0', 'R0'])
+  })
+
+  it('returns the same ref for an unknown source id', () => {
+    expect(reorderWithinZone(ORDER, 'ZZ', 0, zoneOf)).toBe(ORDER)
   })
 })

@@ -211,3 +211,96 @@ export function cellViewportRect(
 
   return { x, y, width, height, visible }
 }
+
+// --- Column drag-reorder (DECISIONS.md D5, R3 — Phase 7). Pure, within-zone only. ---
+
+/**
+ * Drop target for a within-zone column drag. Given a zone's column `offsets`/`widths` (which cover
+ * ALL of the zone's columns — built from the full zone column list, not the virtualizer window, so
+ * off-screen center targets resolve) and a zone-local pointer `x`, returns:
+ *   • `index`      — the insertion index `0..n` (the pointer inserts AFTER a column once it passes
+ *                    that column's midpoint);
+ *   • `indicatorX` — the zone-local x of the drop-indicator line (the column boundary at `index`).
+ * Optional `bounds` clamps the insertion index to `[lo, hi]` — used to keep a drag from crossing an
+ * immovable barrier column (see `dragBounds`); the indicator then pins at the barrier's edge.
+ * An empty zone yields `{ index: 0, indicatorX: 0 }`.
+ */
+export function dropIndexAtX(
+  offsets: number[],
+  widths: number[],
+  x: number,
+  bounds?: [number, number],
+): { index: number; indicatorX: number } {
+  const n = offsets.length
+  let index = 0
+  while (index < n && offsets[index] + widths[index] / 2 < x) index++
+  if (bounds) index = clamp(index, bounds[0], bounds[1])
+  const indicatorX = index === 0 ? 0 : offsets[index - 1] + widths[index - 1]
+  return { index, indicatorX }
+}
+
+/**
+ * The insertion-index range `[lo, hi]` a dragged column may land in when some columns in its zone
+ * are immovable barriers (`type: 'action'`, D10). The source can reorder only within the run
+ * between the nearest barrier on each side, so a draggable column can never be pushed PAST an action
+ * column. `isBarrier[k]` marks the k-th zone column as a barrier; `sourceIndex` is the dragged
+ * column's local index (never itself a barrier — those can't be grabbed).
+ */
+export function dragBounds(isBarrier: boolean[], sourceIndex: number): [number, number] {
+  let lo = 0
+  for (let k = sourceIndex - 1; k >= 0; k--) {
+    if (isBarrier[k]) {
+      lo = k + 1
+      break
+    }
+  }
+  let hi = isBarrier.length
+  for (let k = sourceIndex + 1; k < isBarrier.length; k++) {
+    if (isBarrier[k]) {
+      hi = k
+      break
+    }
+  }
+  return [lo, hi]
+}
+
+/**
+ * The new full column order after dragging `fromId` to insertion index `toIndex` WITHIN its own
+ * zone. Only the source zone's slice of `columnOrder` is permuted — `zoneOf` identifies the zone of
+ * each id, and a column never leaves its zone (cross-zone drag is out, D5). `toIndex` is an
+ * insertion index in the zone's *original* slice (0..n); the splice-after-remove correction is
+ * applied internally. Returns the SAME array reference on a no-op (drop onto self), so callers can
+ * skip firing `onColumnOrderChange`.
+ */
+export function reorderWithinZone(
+  columnOrder: ColumnId[],
+  fromId: ColumnId,
+  toIndex: number,
+  zoneOf: (id: ColumnId) => Zone | undefined,
+): ColumnId[] {
+  const zone = zoneOf(fromId)
+  if (zone == null) return columnOrder
+
+  // The positions in the full array that belong to the source zone (contiguous in practice, but
+  // gathered generally so we write the permuted ids back into exactly those slots).
+  const positions: number[] = []
+  for (let i = 0; i < columnOrder.length; i++) {
+    if (zoneOf(columnOrder[i]) === zone) positions.push(i)
+  }
+  const slice = positions.map((p) => columnOrder[p])
+  const from = slice.indexOf(fromId)
+  if (from < 0) return columnOrder
+
+  let to = clamp(toIndex, 0, slice.length)
+  if (to > from) to -= 1 // removing the source shifts everything after it left by one
+  if (to === from) return columnOrder // no-op — drop onto self
+
+  slice.splice(from, 1)
+  slice.splice(to, 0, fromId)
+
+  const next = columnOrder.slice()
+  positions.forEach((p, k) => {
+    next[p] = slice[k]
+  })
+  return next
+}

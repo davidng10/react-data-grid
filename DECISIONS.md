@@ -27,7 +27,9 @@
 > all pass; AntD-free by `grep`. **FPS gate (prod `vite preview`, editor mounted): PASSED** —
 > sustained 100k×1k scroll holds ~70 avg with the body not re-rendering on the edit path; transient
 > GC dips (3s rolling-min to ~37) recover immediately, no visible latency — parity with P3.
-> **Next: Phase 7** (column drag-reorder, R3/D5). **Earlier (P5, complete & verified in the prod build):**
+> **Phase 7** (column drag-reorder, R3/D5) **is complete & verified — see D11** (header drag, controlled
+order, within-zone only, action-column barriers, edge auto-scroll). **Next: Phase 8** (expandable
+rows, R1). **Earlier (P5, complete & verified in the prod build):**
 > cell focus + range selection drawn as per-zone **overlay rectangles** (D6 — never per-cell
 > flags); click/drag select including cross-zone splits (left↔center↔right, both directions,
 > confirmed by DOM measurement); keyboard arrows, Shift+arrow extend (anchor held), Cmd/Ctrl+arrow
@@ -362,6 +364,65 @@ windowed body. This keeps the D1/D6 contract intact through editing.
 
 ---
 
+## D11. Column drag-reorder: header drag → controlled order (P7 realization of R3/D5)
+
+**Decision.** Drag a column header to reorder it **within its zone**, using the same store + overlay
+mechanism as selection/editing (D6/D10): a plain-TS **drag store** (`core/store/drag-store.ts`)
+holds the in-flight drag; a per-zone **`DragOverlay`** leaf `useSyncExternalStore`-subscribes and
+draws a **header-only drop-indicator line**. `DataGrid` never subscribes, so every pointermove that
+nudges the indicator re-renders only that leaf — the windowed body never re-renders during a drag.
+
+- **Controlled order (R3), no internal state.** The grid takes `columnOrder?: ColumnId[]` and emits
+  `onColumnOrderChange(order)`; it stable-sorts the incoming `columns` by `columnOrder` **before**
+  zoning (finite sort keys; unknown ids keep their order at the end). `frozen` still assigns zones,
+  so `columnOrder` only orders **within** each zone — a malformed cross-zone order can't take effect.
+  Drag is **enabled only when `onColumnOrderChange` is wired** (no handler ⇒ no drag, no grab
+  cursor): the grid won't suggest an interaction whose result it can't persist.
+
+- **Within-zone only (D5).** The pointer's zone-local x is **clamped to the source zone**, so a
+  pointer wandering into another band pins to the source zone's nearest edge — cross-zone drag is
+  structurally impossible. `reorderWithinZone` independently permutes only the source zone's slice.
+
+- **`type: 'action'` columns are inert to drag (extends D10).** An action column is a pure UI
+  affordance, not data, so the grid skips it for **all** interaction — drag included. Two parts:
+  (a) **non-grabbable** — `headerHitTest` returns null over an action header (like cell `hitTest`);
+  (b) **drop-barrier** — `dragBounds` confines a drag to the run between the nearest action columns,
+  so a data column can never be dragged **past** an action column. Together these keep an action
+  column pinned at its zone edge (and the common case — action alone in a frozen zone — is already a
+  no-op).
+
+- **Position-locking is NOT a per-column `draggable: false` flag.** Considered and **rejected** as a
+  leaky half-measure: "can't grab it" doesn't stop neighbors being dragged *around* it, so its index
+  still drifts — a column that looks locked but slides is worse than none. To pin a column's
+  position, use the mechanisms that actually deliver it: **freeze** it (its own zone — the honest,
+  visible lock), or, since order is controlled, **enforce the invariant in `onColumnOrderChange`**
+  (re-pin the id before storing). The `action` barrier above is the one built-in exception, justified
+  by action columns' existing inert semantics.
+
+- **Scope.** **Header-only** indicator (not full-height — avoids the center scroll-compositing a
+  body-spanning line would need; a cursor-following drag "ghost" was considered and declined to keep
+  the headless core lean). **Edge auto-scroll** for a center drag: holding near the center band's
+  left/right edge ramps `scrollLeft` (a dedicated horizontal RAF, sibling to the cell-drag's
+  `autoScrollTick`) and re-derives the drop target each frame, so off-screen columns flow in and are
+  reachable in one gesture; frozen zones never scroll (all columns rendered, D5), and the barrier
+  `bounds` still clamp the target so a column can't be auto-scrolled past an `action` column. A **4px
+  threshold** separates a drag from a plain header click; draggable headers show **`cursor: grab`**
+  (forced to `grabbing` on the capture target during the drag, since pointer capture makes the cursor
+  follow the captured element, not the header under it).
+
+- **Pure, unit-tested geometry** (`core/selection/geometry.ts`): `dropIndexAtX` (pointer → insertion
+  index + indicator x, with optional barrier `bounds`), `dragBounds` (the barrier-confined range),
+  `reorderWithinZone` (new full id order; **same array ref on drop-onto-self** so the callback is
+  skipped). Covered alongside the drag store in `geometry.test.ts` / `drag-store.test.ts`.
+
+- **Verified (P7).** Playground drop test profiled — longest fiber on drop ~45ms (a one-shot
+  relayout, not the per-move hot path, which stays overlay-only); frozen-zone reorder, cross-zone
+  rejection, action-column barrier, and the grab/grabbing cursor all confirmed.
+- **Not done in P7.** **Keyboard** reordering (a11y) is deferred to P9. `DataGridProps` ↔ `GridProps`
+  remain only partially reconciled — P7 added `columnOrder`/`onColumnOrderChange` to `DataGridProps`.
+
+---
+
 ## Deferred decisions (decide at their phase)
 
 
@@ -369,7 +430,7 @@ windowed body. This keeps the D1/D6 contract intact through editing.
 | --- | ----------------------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | R1  | Expanded-row offsets                            | P8    | Base height is fixed (D8). Expanded rows use a sparse override (sorted list of {index, extraHeight} + cumulative offset). No measured heights in v1.                                                      |
 | R2  | Sizing                                          | P3    | `size: "fluid"` (ResizeObserver) default, or `{width,height}`. Flex remainder when a column width is undefined, else horizontal scroll.                                                                   |
-| R3  | Column reorder ownership                        | P7    | Controlled — emit `onColumnOrderChange(ids)`, no internal order state. Drag-reorder is **within-zone only** (incl. frozen zones); cross-zone drag is out, freeze/unfreeze is a separate non-drag op (D5). |
+| R3  | Column reorder ownership                        | P7 ✓  | **Done (D11).** Controlled — emit `onColumnOrderChange(ids)`, no internal order state. Drag-reorder is **within-zone only** (incl. frozen zones); cross-zone drag is out, freeze/unfreeze is a separate non-drag op (D5). `type: 'action'` columns are inert (non-grabbable + drop-barriers). |
 | R4  | Edit update strategy                            | P6 ✓  | **Done (D10):** parent authoritative; editor stays open until commit resolves (single `EditState`). Optimistic multi-pending map deferred to P9.                                                          |
 | R5  | Editor survives cell unmount mid-scroll         | P6 ✓  | **Done (D10):** the editor is a `body` portal, not a body cell, so virtualization can't unmount it; it repositions imperatively on scroll.                                                                |
 | R6  | Cmd+arrow semantics                             | P5    | Jump to grid edge in v1 (not next-filled-cell).                                                                                                                                                           |
@@ -440,7 +501,9 @@ floating auto-expanding default editor, `renderEdit` override, optimistic async 
 overlay + revert/flash on error), read/edit split (D4), grid-owned styleable editor panel,
 `renderRead` wired, `type: 'action'` non-selectable columns. AntD demoed via `renderEdit`
 (devDependency only), not baked in. FPS gate passed (prod, editor mounted; parity with P3).
-- **P7 — Column drag-reorder.** Drop-indicator line only, controlled order (R3).
+- **P7 — Column drag-reorder. ✓ done (D11).** Header-only drop-indicator with edge auto-scroll
+(center zone); controlled order via `columnOrder`/`onColumnOrderChange` (R3); within-zone only;
+`type: 'action'` columns inert (non-grabbable + drop-barriers). Verified in the playground.
 - **P8 — Expandable rows.** Sparse height override in the virtualizer (R1).
 - **P9 — Polish.** Custom-cell API, AntD portal fix (R7), perf write-up, a11y pass.
 

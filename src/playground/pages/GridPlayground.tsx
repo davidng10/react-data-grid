@@ -14,6 +14,7 @@ import {
   cellKey,
   type CellCommit,
   type CellKey,
+  type ColumnId,
   type GridStats,
   type FrozenZone,
 } from "../../data-grid";
@@ -64,6 +65,13 @@ export function GridPlayground() {
   const [freezeLeft, setFreezeLeft] = useState(1);
   const [freezeRight, setFreezeRight] = useState(1);
   const [rowHeight, setRowHeight] = useState(32);
+
+  // Controlled column order (R3/P7) — the grid holds no internal order state, so a drag-reorder
+  // only sticks because we store the emitted id list and feed it back. `undefined` = the columns'
+  // natural order; the grid sorts WITHIN each frozen zone by this list.
+  const [columnOrder, setColumnOrder] = useState<ColumnId[] | undefined>(
+    undefined,
+  );
 
   // The parent-owned, authoritative edit store (R4): a sparse override map keyed by stable
   // RowId:ColumnId. The grid never mutates row data — committed values land here and flow back in
@@ -195,12 +203,12 @@ export function GridPlayground() {
             color: "#166534",
           }}
         >
-          PHASE 6 · editing ({STRESS.rows.toLocaleString()}×
+          PHASE 7 · reorder ({STRESS.rows.toLocaleString()}×
           {STRESS.cols.toLocaleString()})
         </span>
         <span style={{ fontSize: 11, color: "#78716c" }}>
-          double-click / Enter the “Note” or “Word” column to edit · Enter↓ ·
-          Tab→ · Esc cancels
+          drag a column header to reorder (within its frozen zone) · Enter/click
+          “Note” or “Word” to edit · Esc cancels
         </span>
       </header>
 
@@ -226,6 +234,8 @@ export function GridPlayground() {
           getRowId={(row) => row.id}
           rowHeight={rowHeight}
           enableRowSelection={rowSelection}
+          columnOrder={columnOrder}
+          onColumnOrderChange={setColumnOrder}
           onCellCommit={onCellCommit}
           statsRef={statsRef}
         />

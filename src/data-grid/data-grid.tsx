@@ -30,9 +30,14 @@ import type { GridStore } from "./core/store/grid-store";
 import { createEditStore } from "./core/store/edit-store";
 import type { EditStore } from "./core/store/edit-store";
 import { createPendingStore, ERROR_FLASH_MS } from "./core/store/pending-store";
+import { createDragStore } from "./core/store/drag-store";
+import type { DragStore } from "./core/store/drag-store";
 import {
   cellToZoneRect,
+  dragBounds,
+  dropIndexAtX,
   rangeToZoneRects,
+  reorderWithinZone,
   stepCoord,
 } from "./core/selection/geometry";
 import type {
@@ -97,6 +102,11 @@ const FOCUS_BORDER = "1px solid #2563eb";
 const EDGE_ZONE = 48;
 const EDGE_SPEED = 22;
 
+// Column drag-reorder (P7). The pointer must move this far before a header press becomes a drag
+// (so a plain header click isn't swallowed). The drop indicator is a 2px line in the header strip.
+const DRAG_THRESHOLD = 4;
+const DROP_LINE_COLOR = "#2563eb";
+
 export interface DataGridProps<T> {
   rows: T[];
   columns: Column<T>[];
@@ -108,6 +118,15 @@ export interface DataGridProps<T> {
   enableRowSelection?: boolean;
   /** Emitted on any selection change (D6). Full controlled mode (`selection` in) is a later phase. */
   onSelectionChange?: (next: GridSelection) => void;
+  /**
+   * Column order as a list of column ids (R3) — controlled; the grid holds NO internal order state.
+   * When supplied, columns render in this order (still grouped by their `frozen` zone — order only
+   * sorts WITHIN each zone). Drag-reorder requires this to be wired: omit it and a header drag fires
+   * `onColumnOrderChange` but nothing moves.
+   */
+  columnOrder?: ColumnId[];
+  /** Emitted with the new full id order when a within-zone column drag-reorder completes (P7/D5). */
+  onColumnOrderChange?: (order: ColumnId[]) => void;
   /**
    * Commit handler fallback when a column has no own `onCommit` (R4). Receives the parsed
    * `nextValue`; the consumer persists it and feeds it back as new `rows` (the grid never mutates
@@ -188,8 +207,10 @@ const HeaderCell = memo(function HeaderCell(props: {
   width: number;
   height: number;
   frozen?: FrozenZone;
+  /** Show the grab affordance (column drag-reorder, P7). */
+  draggable?: boolean;
 }) {
-  const { name, x, width, height, frozen } = props;
+  const { name, x, width, height, frozen, draggable } = props;
   return (
     <div
       data-frozen={frozen}
@@ -202,6 +223,7 @@ const HeaderCell = memo(function HeaderCell(props: {
         height,
         lineHeight: `${height}px`,
         transform: `translateX(${x}px)`,
+        cursor: draggable ? "grab" : undefined,
       }}
     >
       {name}
@@ -274,6 +296,37 @@ const SelectionOverlay = memo(function SelectionOverlay(props: {
           }}
         />
       )}
+    </div>
+  );
+});
+
+// The drop-indicator for a column drag (P7), one leaf per zone. Mounted INSIDE that zone's sticky
+// header strip, so it shares the header cells' coordinate space (zone-local x) and pins/scrolls
+// with them. Subscribes to the drag store, so a header drag re-renders only this leaf, never the
+// body (D1/D6). Header-only line; reorder stays within the source zone (D5), so a zone only paints
+// the indicator while ITS own header is the drag source.
+const DragOverlay = memo(function DragOverlay(props: {
+  zone: Zone;
+  dragStore: DragStore;
+  rowHeight: number;
+}) {
+  const { zone, dragStore, rowHeight } = props;
+  const drag = useSyncExternalStore(dragStore.subscribe, dragStore.getSnapshot);
+  if (drag.status !== "dragging" || drag.sourceZone !== zone) return null;
+  return (
+    <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: 2,
+          height: rowHeight,
+          transform: `translateX(${drag.indicatorX - 1}px)`,
+          background: DROP_LINE_COLOR,
+          zIndex: 2,
+        }}
+      />
     </div>
   );
 });
@@ -444,6 +497,8 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     overscanCols = 2,
     enableRowSelection = false,
     onSelectionChange,
+    columnOrder: columnOrderProp,
+    onColumnOrderChange,
     onCellCommit,
     editorClassName,
     editorStyle,
@@ -454,8 +509,28 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   const [store] = useState(() => createGridStore());
   const [editStore] = useState(() => createEditStore());
   const [pendingStore] = useState(() => createPendingStore());
+  const [dragStore] = useState(() => createDragStore());
 
   const gutterW = enableRowSelection ? GUTTER_WIDTH : 0;
+  // Drag-reorder is enabled only when the consumer can persist the result (it's controlled, R3): no
+  // handler ⇒ no drag, no grab cursor. Gates both the interaction and the header affordance.
+  const reorderable = !!onColumnOrderChange;
+
+  // Apply the controlled `columnOrder` (R3) before zoning: a stable sort by the id's position in
+  // the prop (unknown ids keep their original relative order, sorted to the end). `frozen` still
+  // drives zone assignment below, so this only orders columns WITHIN each zone — a malformed
+  // cross-zone order can't take effect (D5).
+  const ordered = useMemo(() => {
+    if (!columnOrderProp) return columns;
+    const pos = new Map(columnOrderProp.map((id, i) => [id, i]));
+    const n = columnOrderProp.length;
+    // Finite sort key: listed ids by their position; unlisted ids keep their original relative
+    // order, after the listed ones (key `n + originalIndex` — never NaN).
+    return columns
+      .map((c, i) => ({ c, key: pos.get(c.id) ?? n + i }))
+      .sort((a, b) => a.key - b.key)
+      .map((x) => x.c);
+  }, [columns, columnOrderProp]);
 
   // Partition columns into the three zones, preserving relative order within each. Cross-zone
   // reorder is disallowed (D5), so grouping by `frozen` is the whole zoning model.
@@ -463,13 +538,13 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     const left: Column<T>[] = [];
     const center: Column<T>[] = [];
     const right: Column<T>[] = [];
-    for (const c of columns) {
+    for (const c of ordered) {
       if (c.frozen === "left") left.push(c);
       else if (c.frozen === "right") right.push(c);
       else center.push(c);
     }
     return { left, center, right };
-  }, [columns]);
+  }, [ordered]);
 
   const left = useMemo(() => zoneLayout(zones.left), [zones.left]);
   const center = useMemo(() => zoneLayout(zones.center), [zones.center]);
@@ -575,12 +650,23 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   const lastHitRef = useRef<CellCoord | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const autoScrollRef = useRef<number | null>(null);
+  // Separate RAF for the column drag's edge auto-scroll (P7) — horizontal, center-zone only.
+  const dragScrollRef = useRef<number | null>(null);
   // Click-to-edit: a press on the ALREADY-focused cell opens its editor — but only on pointer-up
   // and only if the pointer didn't drag (so a drag-select starting on the focused cell still
   // selects a range, never edits). `pendingEditRef` holds that candidate cell; `movedRef` trips the
   // moment the drag crosses into another cell.
   const pendingEditRef = useRef<CellCoord | null>(null);
   const movedRef = useRef(false);
+  // Column drag-reorder (P7). The header captured on pointerdown; the drag only starts (and the
+  // drag store only flips to `dragging`) once the pointer crosses `DRAG_THRESHOLD`. `bounds` is the
+  // insertion range the drag is confined to — it can't cross an `action` barrier column (D10).
+  const dragSourceRef = useRef<{
+    columnId: ColumnId;
+    zone: Zone;
+    sourceIndex: number;
+    bounds: [number, number];
+  } | null>(null);
 
   // Map a viewport point to a cell. Zone is chosen by screen band (the gutter + frozen zones are
   // pinned to the viewport edges); the header strip and the gutter return null (not selectable).
@@ -626,6 +712,77 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     // so interactive content inside handles its own clicks with no extra wiring.
     if (!col || col.type === "action") return null;
     return { rowIndex, columnId: col.id };
+  };
+
+  // Map a viewport point in the HEADER strip to the header it's over (P7). Mirrors `hitTest`'s
+  // zone-band detection (for `vpY < rowHeight`, the header strip) AND its `type: 'action'`
+  // exclusion: an action column is a pure UI affordance (D10), so the grid skips it for every
+  // interaction — drag-reorder included (grabbing a button column to sort it is meaningless).
+  const headerHitTest = (
+    clientX: number,
+    clientY: number,
+  ): { columnId: ColumnId; zone: Zone; sourceIndex: number } | null => {
+    const el = scrollRef.current;
+    if (!el || columnOrder.length === 0) return null;
+    const rect = el.getBoundingClientRect();
+
+    const vpY = clientY - rect.top;
+    if (vpY < 0 || vpY >= rowHeight) return null; // only the header strip
+
+    const localX = clientX - rect.left;
+    const viewportW = el.clientWidth;
+    if (gutterW > 0 && localX < gutterW) return null; // over the checkbox gutter
+
+    let cols: Column<T>[];
+    let offsets: number[];
+    let zoneX: number;
+    let zone: Zone;
+    if (left.total > 0 && localX < leftBand) {
+      cols = zones.left;
+      offsets = left.offsets;
+      zoneX = localX - gutterW;
+      zone = "left";
+    } else if (right.total > 0 && localX >= viewportW - right.total) {
+      cols = zones.right;
+      offsets = right.offsets;
+      zoneX = localX - (viewportW - right.total);
+      zone = "right";
+    } else {
+      cols = zones.center;
+      offsets = center.offsets;
+      zoneX = localX - leftBand + el.scrollLeft;
+      zone = "center";
+    }
+    if (cols.length === 0) return null;
+    const i = colIndexAtX(offsets, zoneX);
+    const col = cols[i];
+    if (!col || col.type === "action") return null;
+    return { columnId: col.id, zone, sourceIndex: i };
+  };
+
+  // The ZoneLayout for a zone (offsets/widths/total) — drives the drop-index geometry.
+  const layoutFor = (zone: Zone) =>
+    zone === "left" ? left : zone === "right" ? right : center;
+
+  // The zone's columns (for barrier detection during a drag).
+  const zoneColsFor = (zone: Zone) =>
+    zone === "left" ? zones.left : zone === "right" ? zones.right : zones.center;
+
+  // A clientX → zone-local x for `zone`, clamped to the zone so a pointer that wanders into another
+  // band pins to the source zone's nearest edge (this is what keeps reorder WITHIN-zone, D5).
+  const zoneLocalXFor = (zone: Zone, clientX: number): number => {
+    const el = scrollRef.current;
+    if (!el) return 0;
+    const localX = clientX - el.getBoundingClientRect().left;
+    const layout = layoutFor(zone);
+    if (zone === "left") return clampNum(localX - gutterW, 0, layout.total);
+    if (zone === "right")
+      return clampNum(
+        localX - (el.clientWidth - right.total),
+        0,
+        layout.total,
+      );
+    return clampNum(localX - leftBand + el.scrollLeft, 0, layout.total);
   };
 
   // Scroll a cell fully into view, accounting for the pinned chrome the virtualizer can't see:
@@ -809,16 +966,77 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     autoScrollRef.current = requestAnimationFrame(autoScrollTick);
   };
 
+  // Edge auto-scroll for a CENTER column drag (P7): while the pointer is held near the center band's
+  // left/right edge, ramp `scrollLeft` so off-screen columns flow in and become reachable in one
+  // gesture. Horizontal only; frozen zones never scroll (all their columns are rendered, D5). Each
+  // frame that scrolls also re-derives the drop target — the same pointer maps to a new column once
+  // `scrollLeft` moves — so the indicator tracks the columns flowing in. The drop stays clamped to
+  // the source's barrier `bounds`, so auto-scroll can't push a column past an `action` column.
+  const dragScrollTick = () => {
+    const src = dragSourceRef.current;
+    const el = scrollRef.current;
+    const pt = pointerRef.current;
+    if (
+      !src ||
+      src.zone !== "center" ||
+      !el ||
+      !pt ||
+      dragStore.getSnapshot().status !== "dragging"
+    ) {
+      dragScrollRef.current = null;
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    const leftLimit = rect.left + leftBand;
+    const rightLimit = rect.left + el.clientWidth - right.total;
+    let dx = 0;
+    if (pt.x < leftLimit + EDGE_ZONE) dx = -EDGE_SPEED;
+    else if (pt.x > rightLimit - EDGE_ZONE) dx = EDGE_SPEED;
+    if (dx) {
+      el.scrollLeft += dx;
+      const layout = layoutFor("center");
+      const zoneX = zoneLocalXFor("center", pt.x);
+      const { index, indicatorX } = dropIndexAtX(
+        layout.offsets,
+        layout.widths,
+        zoneX,
+        src.bounds,
+      );
+      dragStore.updateTarget(index, indicatorX);
+    }
+    dragScrollRef.current = requestAnimationFrame(dragScrollTick);
+  };
+
   useEffect(
     () => () => {
       if (autoScrollRef.current != null)
         cancelAnimationFrame(autoScrollRef.current);
+      if (dragScrollRef.current != null)
+        cancelAnimationFrame(dragScrollRef.current);
     },
     [],
   );
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
+    // Header press → a column drag candidate (P7). Capture the source and the origin, but don't
+    // start the drag store yet — wait for the pointer to cross DRAG_THRESHOLD so a plain header
+    // click isn't swallowed. Returns before the cell path, so a header drag never touches selection.
+    const header = reorderable ? headerHitTest(e.clientX, e.clientY) : null;
+    if (header) {
+      // Confine the drag so it can't be pushed past an `action` barrier column (D10). Constant for
+      // the gesture (source + zone are fixed), so compute it once here.
+      const isBarrier = zoneColsFor(header.zone).map((c) => c.type === "action");
+      const bounds = dragBounds(isBarrier, header.sourceIndex);
+      dragSourceRef.current = { ...header, bounds };
+      pointerRef.current = { x: e.clientX, y: e.clientY };
+      // While the pointer is captured the cursor follows the CAPTURE TARGET (this container), not the
+      // header under it — so the header's `grab` would vanish. Force `grabbing` on the container for
+      // the gesture; reset on pointerup. One write covers the whole drag (capture redirects it).
+      if (scrollRef.current) scrollRef.current.style.cursor = "grabbing";
+      scrollRef.current?.setPointerCapture(e.pointerId);
+      return;
+    }
     const cell = hitTest(e.clientX, e.clientY);
     if (!cell) return; // header / gutter / outside — let native handlers (e.g. checkboxes) run
     scrollRef.current?.focus();
@@ -845,12 +1063,70 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // Header drag (P7): below threshold (and not yet dragging) we wait; once moved we start, then
+    // track the drop target. Clamped zone-local x keeps the indicator inside the source zone (D5).
+    const src = dragSourceRef.current;
+    if (src) {
+      const origin = pointerRef.current?.x ?? e.clientX;
+      const dragging = dragStore.getSnapshot().status === "dragging";
+      if (!dragging && Math.abs(e.clientX - origin) < DRAG_THRESHOLD) return;
+      // Past the threshold: track the LIVE pointer so the auto-scroll tick reads the current edge.
+      pointerRef.current = { x: e.clientX, y: e.clientY };
+      const layout = layoutFor(src.zone);
+      const zoneX = zoneLocalXFor(src.zone, e.clientX);
+      const { index, indicatorX } = dropIndexAtX(
+        layout.offsets,
+        layout.widths,
+        zoneX,
+        src.bounds,
+      );
+      if (dragging) dragStore.updateTarget(index, indicatorX);
+      else {
+        dragStore.start({
+          sourceColumnId: src.columnId,
+          sourceZone: src.zone,
+          sourceIndex: src.sourceIndex,
+          targetIndex: index,
+          indicatorX,
+        });
+        // A center drag can reach off-screen columns — start the edge auto-scroll (D5: frozen
+        // zones are fully rendered, so they never need it).
+        if (src.zone === "center" && dragScrollRef.current == null) {
+          dragScrollRef.current = requestAnimationFrame(dragScrollTick);
+        }
+      }
+      return;
+    }
     if (!draggingRef.current) return;
     pointerRef.current = { x: e.clientX, y: e.clientY };
     extendDrag(hitTest(e.clientX, e.clientY));
   };
 
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    // Header drag (P7): on drop, emit the new order (within-zone). A press that never crossed the
+    // threshold leaves the store idle — treat it as a plain header click (no reorder).
+    const src = dragSourceRef.current;
+    if (src) {
+      dragSourceRef.current = null;
+      if (dragScrollRef.current != null) {
+        cancelAnimationFrame(dragScrollRef.current);
+        dragScrollRef.current = null;
+      }
+      scrollRef.current?.releasePointerCapture(e.pointerId);
+      if (scrollRef.current) scrollRef.current.style.cursor = ""; // restore hover grab
+      const snap = dragStore.getSnapshot();
+      if (snap.status === "dragging") {
+        const next = reorderWithinZone(
+          columnOrder,
+          snap.sourceColumnId,
+          snap.targetIndex,
+          (id) => placementMap.get(id)?.zone,
+        );
+        dragStore.end();
+        if (next !== columnOrder) onColumnOrderChange?.(next); // same ref ⇒ drop onto self ⇒ no-op
+      }
+      return;
+    }
     draggingRef.current = false;
     if (autoScrollRef.current != null) {
       cancelAnimationFrame(autoScrollRef.current);
@@ -861,6 +1137,22 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     const editCell = pendingEditRef.current;
     pendingEditRef.current = null;
     if (editCell && !movedRef.current) beginEdit(editCell);
+  };
+
+  // Safety net for the column drag (P7): if pointer capture is lost WITHOUT a pointerup — e.g. a
+  // pointercancel, or the OS stealing the pointer — make sure the imperative `grabbing` cursor and
+  // the drag state don't get stuck. Idempotent on the normal release path (state already cleared),
+  // and harmless to the cell drag (it sets no cursor and no `dragSourceRef`).
+  const onLostPointerCapture = () => {
+    if (scrollRef.current) scrollRef.current.style.cursor = "";
+    if (dragScrollRef.current != null) {
+      cancelAnimationFrame(dragScrollRef.current);
+      dragScrollRef.current = null;
+    }
+    if (dragSourceRef.current) {
+      dragSourceRef.current = null;
+      dragStore.end();
+    }
   };
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -953,8 +1245,10 @@ export function DataGrid<T>(props: DataGridProps<T>) {
               width={layout.widths[i]}
               height={rowHeight}
               frozen={side}
+              draggable={reorderable && col.type !== "action"}
             />
           ))}
+          <DragOverlay zone={side} dragStore={dragStore} rowHeight={rowHeight} />
         </div>
         <div
           style={{
@@ -999,6 +1293,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onLostPointerCapture={onLostPointerCapture}
         onKeyDown={onKeyDown}
         style={{
           height: "100%",
@@ -1053,9 +1348,15 @@ export function DataGrid<T>(props: DataGridProps<T>) {
                     x={vc.start - centerScrollMargin}
                     width={vc.size}
                     height={rowHeight}
+                    draggable={reorderable && col.type !== "action"}
                   />
                 );
               })}
+              <DragOverlay
+                zone="center"
+                dragStore={dragStore}
+                rowHeight={rowHeight}
+              />
             </div>
 
             {/* body */}
