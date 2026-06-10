@@ -1,29 +1,33 @@
 # Architecture Decisions
 
-> **Status: Phase 6 (editing engine) implemented — code complete; interactive + FPS verification
-> pending.** The headless **edit engine** is built and is **AntD-free** (the grid ships no UI-lib
-> dependency — `grep antd src/data-grid` is empty; AntD lives only in the playground as a
-> `devDependency`). It mirrors the selection layer: a plain-TS **edit store**
-> (`core/store/edit-store.ts`, 12 unit tests) holds the `EditState` machine, and a single
+> **Status: Phase 6 (editing engine) COMPLETE.** The headless **edit engine** is built, verified,
+> and **AntD-free** (the grid ships no UI-lib dependency — `grep antd src/data-grid` is empty; AntD
+> lives only in the playground as a `devDependency`). It mirrors the selection layer: a plain-TS
+> **edit store** (`core/store/edit-store.ts`) holds the `EditState` machine, and a single
 > **`EditorPortal`** leaf subscribes to it — `DataGrid`/the windowed body **never** subscribe, so
-> opening an editor, typing a draft, and submit/error transitions never re-render the body. The
-> default editor is a **zero-dep floating, auto-expanding portal** `<textarea>` (Glide-style); a
-> column's `renderEdit(ctx)` overrides it with anything (the demo uses an AntD `Select`). Because
-> the editor is a `createPortal`-to-`body` overlay it **escapes the grid's clip (R7 pulled forward)**
-> and **survives the underlying cell virtualizing out (R5) for free**; it repositions on
-> scroll/resize **imperatively** (a ref transform, never setState). Async model: **optimistic** —
-> committing **closes the editor immediately** and the saving lifecycle moves to a third store +
-> overlay (`core/store/pending-store.ts`, 8 tests, + per-zone `PendingOverlay`): the cell shows the
-> new value with a right-edge spinner; on success the persisted value flows back via the consumer
-> (R4 — the grid never mutates row data) and the spinner clears; on failure the cell **reverts to
-> the old value and flashes red** (the draft is discarded). The body never re-renders on the edit
-> path (only the
-> overlay leaf does). Triggers: double-click / Enter / F2 / type-to-replace; Enter
-> commits + moves down, Tab commits + moves right, Esc cancels. Positioning math is a new pure,
-> unit-tested `cellViewportRect` (`core/selection/geometry.ts`, 6 tests). **Verified:** `npm test`
-> (41 tests), `tsc -b`, and the prod build all pass; the grid is AntD-free by `grep`. **Pending
-> (manual):** the interactive UX walkthrough + the P6 FPS gate (≥60 FPS with an editor mounted) in
-> `vite preview`, per the harness. **Earlier (P5, complete & verified in the prod build):**
+> opening an editor and typing a draft never re-render the body. The default editor is a **zero-dep
+> floating, auto-expanding portal** `<textarea>` (Glide-style); a column's `renderEdit(ctx)`
+> overrides it with anything (the demo uses an AntD `Select`). Because the editor is a
+> `createPortal`-to-`body` overlay it **escapes the grid's clip (R7 pulled forward)** and **survives
+> the underlying cell virtualizing out (R5) for free**; while editing it repositions on
+> scroll/resize **imperatively** (a ref transform, never setState) and **clamps to the viewport
+> edge** so it stays visible ("frozen") rather than hiding. Async model: **optimistic** — committing
+> **closes the editor immediately** and the saving lifecycle moves to a third store + overlay
+> (`core/store/pending-store.ts`, + per-zone `PendingOverlay`): the cell shows the new value with a
+> right-edge spinner; on success the persisted value flows back via the consumer (R4 — the grid
+> never mutates row data) and the spinner clears; on failure the cell **reverts and flashes red**
+> (draft discarded). **The body never re-renders on the edit path** (only the overlay leaves do).
+> Triggers: **click an already-focused cell** / Enter / F2 / type-to-replace; Enter commits + moves
+> down, Tab commits + moves right, Esc cancels; **outside-click commits** (grid-level). **Editor
+> panel is grid-owned + styleable** (`editorClassName`/`editorStyle` on the host; default editors
+> fill it transparently). **`renderRead` is wired** (custom read-mode content), and **`type:
+> 'action'` columns are non-selectable** (pointer + keyboard skip them) so a `renderRead` button
+> handles its own clicks with no consumer wiring. Positioning math is a new pure, unit-tested
+> `cellViewportRect`. **Verified:** `npm test` (**52 tests**), `tsc -b`, `eslint`, and the prod build
+> all pass; AntD-free by `grep`. **FPS gate (prod `vite preview`, editor mounted): PASSED** —
+> sustained 100k×1k scroll holds ~70 avg with the body not re-rendering on the edit path; transient
+> GC dips (3s rolling-min to ~37) recover immediately, no visible latency — parity with P3.
+> **Next: Phase 7** (column drag-reorder, R3/D5). **Earlier (P5, complete & verified in the prod build):**
 > cell focus + range selection drawn as per-zone **overlay rectangles** (D6 — never per-cell
 > flags); click/drag select including cross-zone splits (left↔center↔right, both directions,
 > confirmed by DOM measurement); keyboard arrows, Shift+arrow extend (anchor held), Cmd/Ctrl+arrow
@@ -431,10 +435,11 @@ virtualization, no freeze/select/edit. **Prove ≥60 FPS at 100k×1k.** If this 
 - **P4 — Frozen zones.** Left/center/right, scroll sync (D5).
 - **P5 — Selection + keyboard nav.** Focus cell, arrow / Cmd-arrow, range as overlay (D6),
 row checkbox.
-- **P6 — Editing engine (headless, AntD-free). ✓ code-complete.** Edit store + `EditorPortal`
-(D10): floating auto-expanding default editor, `renderEdit` override, async commit with
-submitting/error, read/edit split (D4). AntD is demoed via `renderEdit` (devDependency only), not
-baked in. ⚠ Interactive UX + FPS re-measure (editor mounted) still a manual `vite preview` check.
+- **P6 — Editing engine (headless, AntD-free). ✓ COMPLETE.** Edit store + `EditorPortal` (D10):
+floating auto-expanding default editor, `renderEdit` override, optimistic async commit (pending
+overlay + revert/flash on error), read/edit split (D4), grid-owned styleable editor panel,
+`renderRead` wired, `type: 'action'` non-selectable columns. AntD demoed via `renderEdit`
+(devDependency only), not baked in. FPS gate passed (prod, editor mounted; parity with P3).
 - **P7 — Column drag-reorder.** Drop-indicator line only, controlled order (R3).
 - **P8 — Expandable rows.** Sparse height override in the virtualizer (R1).
 - **P9 — Polish.** Custom-cell API, AntD portal fix (R7), perf write-up, a11y pass.
