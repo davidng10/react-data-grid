@@ -46,3 +46,42 @@ for (const m of ['setPointerCapture', 'releasePointerCapture', 'hasPointerCaptur
     ;(Element.prototype as unknown as Record<string, unknown>)[m] = () => {}
   }
 }
+
+// jsdom reports 0 for every box metric, so TanStack Virtual computes an EMPTY window and no cells
+// render — leaving the cell/overlay/editor paths untested. Give every element a fixed viewport box:
+// the grid never measures individual cells (it positions them via transforms from the offsets
+// arrays), so one size for all is enough to make the virtualizer produce a window and the render
+// paths execute. A test that needs different coordinates overrides the scroll container's own rect.
+const VIEWPORT_W = 1000
+const VIEWPORT_H = 600
+// TanStack Virtual sizes its window from offsetWidth/offsetHeight; the grid's hitTest reads
+// clientWidth/clientHeight + getBoundingClientRect. Mock all of them.
+Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+  configurable: true,
+  get: () => VIEWPORT_W,
+})
+Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+  configurable: true,
+  get: () => VIEWPORT_H,
+})
+Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+  configurable: true,
+  get: () => VIEWPORT_W,
+})
+Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+  configurable: true,
+  get: () => VIEWPORT_H,
+})
+HTMLElement.prototype.getBoundingClientRect = function () {
+  return {
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: VIEWPORT_W,
+    bottom: VIEWPORT_H,
+    width: VIEWPORT_W,
+    height: VIEWPORT_H,
+    toJSON: () => ({}),
+  } as DOMRect
+}
