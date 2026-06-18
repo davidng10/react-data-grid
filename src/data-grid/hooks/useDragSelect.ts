@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { CellCoord } from "../core/types";
 import type { GridStore } from "../core/store/grid-store";
-import { EDGE_ZONE, EDGE_SPEED } from "../internal/constants";
+import { edgeScrollDelta } from "../internal/auto-scroll";
 import type { GridLayout } from "./useGridLayout";
 import type { GridGeometryHelpers } from "./useGridGeometryHelpers";
 
@@ -72,16 +72,11 @@ export function useDragSelect<T>(args: {
     const el = scrollRef.current;
     const pt = pointerRef.current;
     if (el && pt && movedRef.current) {
-      const rect = el.getBoundingClientRect();
-      const topLimit = rect.top + rowHeight;
-      const leftLimit = rect.left + leftBand;
-      const rightLimit = rect.left + el.clientWidth - right.total;
-      let dx = 0;
-      let dy = 0;
-      if (pt.y < topLimit + EDGE_ZONE) dy = -EDGE_SPEED;
-      else if (pt.y > rect.bottom - EDGE_ZONE) dy = EDGE_SPEED;
-      if (pt.x < leftLimit + EDGE_ZONE) dx = -EDGE_SPEED;
-      else if (pt.x > rightLimit - EDGE_ZONE) dx = EDGE_SPEED;
+      const { dx, dy } = edgeScrollDelta(pt, el, {
+        top: rowHeight,
+        left: leftBand,
+        right: right.total,
+      });
       if (dy) el.scrollTop += dy;
       if (dx) el.scrollLeft += dx;
       if (dx || dy) extendDrag(hitTest(pt.x, pt.y));

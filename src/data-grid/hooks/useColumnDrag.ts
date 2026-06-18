@@ -8,7 +8,8 @@ import {
 } from "../core/selection/geometry";
 import type { Zone } from "../core/selection/geometry";
 import type { DragStore } from "../core/store/drag-store";
-import { EDGE_ZONE, EDGE_SPEED, DRAG_THRESHOLD } from "../internal/constants";
+import { DRAG_THRESHOLD } from "../internal/constants";
+import { edgeScrollDelta } from "../internal/auto-scroll";
 import type { GridLayout } from "./useGridLayout";
 import type { GridGeometryHelpers } from "./useGridGeometryHelpers";
 
@@ -69,12 +70,8 @@ export function useColumnDrag<T>(args: {
       dragScrollRef.current = null;
       return;
     }
-    const rect = el.getBoundingClientRect();
-    const leftLimit = rect.left + leftBand;
-    const rightLimit = rect.left + el.clientWidth - right.total;
-    let dx = 0;
-    if (pt.x < leftLimit + EDGE_ZONE) dx = -EDGE_SPEED;
-    else if (pt.x > rightLimit - EDGE_ZONE) dx = EDGE_SPEED;
+    // Horizontal only — no `top` inset, so dy stays 0 (frozen zones are fully rendered, D5).
+    const { dx } = edgeScrollDelta(pt, el, { left: leftBand, right: right.total });
     if (dx) {
       el.scrollLeft += dx;
       const zl = layoutFor("center");
