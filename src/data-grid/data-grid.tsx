@@ -30,6 +30,7 @@ import { readContent } from "./internal/read-content";
 import { Cell } from "./components/Cell";
 import { HeaderCell } from "./components/HeaderCell";
 import { DragOverlay } from "./components/DragOverlay";
+import { EmptyRowsLayer } from "./components/EmptyRowsLayer";
 import { ResizeOverlay } from "./components/ResizeOverlay";
 import { RowGutter } from "./components/RowGutter";
 import { SelectionOverlay } from "./components/SelectionOverlay";
@@ -41,7 +42,7 @@ import { useColumnDrag } from "./hooks/useColumnDrag";
 import { useColumnResize } from "./hooks/useColumnResize";
 import { useDragSelect } from "./hooks/useDragSelect";
 
-// The grid shell (DOM-rendered). DECISIONS.md D5/D8/D9 + frozen zones (P4) + selection (P5).
+// The grid shell (DOM-rendered)
 //
 // Windowing via TanStack Virtual: one vertical row virtualizer (uniform height, D8) + one
 // horizontal column virtualizer that windows ONLY the center zone. Cells are absolutely
@@ -358,6 +359,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
             background: FROZEN_BG,
           }}
         >
+          <EmptyRowsLayer rowHeight={rowHeight} />
           {vRows.map((vr) => {
             const row = rows[vr.index];
             const rowId = getRowId(row, vr.index);
@@ -476,7 +478,14 @@ export function DataGrid<T>(props: DataGridProps<T>) {
             </div>
 
             {/* body */}
-            <div style={{ position: "relative", height: totalHeight }}>
+            <div
+              style={{
+                position: "relative",
+                height: totalHeight,
+                background: FROZEN_BG,
+              }}
+            >
+              <EmptyRowsLayer rowHeight={rowHeight} />
               {vRows.map((vr) => {
                 const row = rows[vr.index];
                 const rowId = getRowId(row, vr.index);

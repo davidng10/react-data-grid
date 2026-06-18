@@ -16,6 +16,11 @@ export const FREEZE_DIVIDER_COLOR = "#d6d3d1";
 // Frozen body cells must be opaque so the scrolling center band doesn't show through them as it
 // slides underneath (z-ordering puts frozen zones above center). Read-mode only.
 export const FROZEN_BG = "#ffffff";
+// Skeleton "loading" placeholder painted behind the (opaque white) body cells — visible only in the
+// gap a fast scroll opens before React mounts its cells: See `components/EmptyRowsLayer`.
+export const SKELETON_BG = "#ffffff"; // base behind the bars (opaque)
+export const SKELETON_BAR = "#f5f5f4"; // the per-row placeholder bar
+export const SKELETON_PULSE_MS = 1000;
 
 // Selection overlay cosmetics (D6).
 export const SELECT_FILL = "rgba(37, 99, 235, 0.12)";

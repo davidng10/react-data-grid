@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { FREEZE_DIVIDER_COLOR } from "./constants";
+import { FREEZE_DIVIDER_COLOR, FROZEN_BG } from "./constants";
 
 // The freeze dividers overlay the boundary as a box-shadow so they cost zero layout width.
 export const FREEZE_DIVIDER_LEFT: CSSProperties = {
@@ -13,6 +13,8 @@ export const cellBase: CSSProperties = {
   position: "absolute",
   top: 0,
   left: 0,
+  // Opaque white so rendered rows are solid;
+  background: FROZEN_BG,
   padding: "0 10px",
   fontSize: 13,
   boxSizing: "border-box",
