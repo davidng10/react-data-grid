@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties } from "react";
 import type {
   CellCommit,
   Column,
@@ -26,6 +26,7 @@ import {
 } from "./internal/constants";
 import { FREEZE_DIVIDER_LEFT, FREEZE_DIVIDER_RIGHT } from "./internal/style";
 import type { ZoneLayout } from "./internal/layout";
+import { composePointerGestures } from "./internal/pointer-gestures";
 import { readContent } from "./internal/read-content";
 import { Cell } from "./components/Cell";
 import { HeaderCell } from "./components/HeaderCell";
@@ -264,27 +265,11 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     beginEdit,
   });
 
-  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    if (colResize.onPointerDown(e)) return;
-    if (colDrag.onPointerDown(e)) return;
-    dragSel.onPointerDown(e);
-  };
-  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (colResize.onPointerMove(e)) return;
-    if (colDrag.onPointerMove(e)) return;
-    dragSel.onPointerMove(e);
-  };
-  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (colResize.onPointerUp(e)) return;
-    if (colDrag.onPointerUp(e)) return;
-    dragSel.onPointerUp(e);
-  };
-  const onLostPointerCapture = () => {
-    colResize.onLostPointerCapture();
-    colDrag.onLostPointerCapture();
-    dragSel.onLostPointerCapture();
-  };
+  // Priority order, declared once: resize (thin boundary strip) → reorder (rest of the header) →
+  // drag-select (the body). The composer derives all four pointer handlers from this list, so the
+  // ordering — and every gesture's cleanup on capture loss — can't drift between event types.
+  const { onPointerDown, onPointerMove, onPointerUp, onLostPointerCapture } =
+    composePointerGestures([colResize, colDrag, dragSel]);
 
   const { onKeyDown } = useGridKeyboard({
     store,
