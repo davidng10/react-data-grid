@@ -36,9 +36,14 @@ export function useGridKeyboard<T>(args: {
         beginEdit(focused);
         return;
       }
-      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault();
-        beginEdit(focused, e.key);
+
+      const isPrintableChar = e.key.length === 1;
+
+      if (isPrintableChar && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        // Only swallow the key if it actually opened an editor. On a non-editable cell
+        // beginEdit no-ops, so an unconditional preventDefault would eat the key's native
+        // behavior (e.g. Space scrolling) for nothing.
+        if (beginEdit(focused, e.key)) e.preventDefault();
         return;
       }
     }

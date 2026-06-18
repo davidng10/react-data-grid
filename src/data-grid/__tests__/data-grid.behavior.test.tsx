@@ -160,6 +160,16 @@ describe('editing', () => {
     expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('x')
   })
 
+  it('a printable key on a NON-editable focused cell opens nothing and does not swallow the key', () => {
+    // c1 is not editable. The key must NOT be preventDefault()'d, or native behavior (e.g. Space
+    // scrolling) is lost for no reason. fireEvent returns false iff preventDefault was called.
+    const { scroller } = renderGrid({ columns: editableCols() })
+    click(scroller, 150, 48) // focus c1 (non-editable)
+    const notPrevented = fireEvent.keyDown(scroller, { key: ' ' })
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(notPrevented).toBe(true)
+  })
+
   it('a failed commit reverts (error path runs without crashing)', async () => {
     const onCellCommit = vi.fn().mockRejectedValue(new Error('nope'))
     const { scroller } = renderGrid({ columns: editableCols(), onCellCommit })
