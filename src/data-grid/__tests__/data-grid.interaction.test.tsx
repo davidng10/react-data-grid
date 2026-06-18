@@ -112,6 +112,32 @@ describe('drag-select auto-scroll (rAF hot path)', () => {
     up(scroller, 150, 590)
   })
 
+  it('lostpointercapture mid-drag-select aborts the gesture: auto-scroll stops and hover no longer extends', () => {
+    // Capture can be lost without a pointerup (touch pointercancel, the captured node
+    // re-rendering out, capture stolen). The gesture must end — otherwise the auto-scroll RAF
+    // reschedules forever and pointermove keeps extending the range on plain hover.
+    const onSel = vi.fn()
+    const { scroller } = renderGrid({ onSelectionChange: onSel })
+    makeScrollable(scroller)
+    raf = installRaf()
+
+    down(scroller, 50, 48) // c0 r0
+    move(scroller, 150, 200) // cross into another cell → movedRef true
+    move(scroller, 150, 590) // into the bottom edge band
+    raf.flush() // one tick → auto-scroll engages
+    const scrolledTo = scroller.scrollTop
+    expect(scrolledTo).toBeGreaterThan(0)
+
+    fireEvent.lostPointerCapture(scroller)
+
+    raf.flush() // the loop must be dead now — no further scrolling
+    expect(scroller.scrollTop).toBe(scrolledTo)
+
+    const callsBefore = onSel.mock.calls.length
+    move(scroller, 250, 300) // hover over another cell with no button held
+    expect(onSel.mock.calls.length).toBe(callsBefore) // gesture aborted → no extend
+  })
+
   it('a stationary press on a frozen cell in the edge band does NOT auto-scroll (movedRef gate)', () => {
     // Frozen-left columns sit IN the left edge band, so without the movedRef gate a plain click
     // would auto-scroll every frame. This pins that gate (the subtle invariant, previously untested).

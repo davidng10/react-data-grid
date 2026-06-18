@@ -10,6 +10,7 @@ export interface DragSelectHandlers {
   onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void;
   onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
   onPointerUp: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  onLostPointerCapture: () => void;
 }
 
 // Cell focus + drag-select gesture, with edge auto-scroll and click-to-edit disambiguation (D1/D6):
@@ -128,12 +129,18 @@ export function useDragSelect<T>(args: {
     extendDrag(hitTest(e.clientX, e.clientY));
   };
 
-  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+  // End the drag and its auto-scroll loop. Shared by a clean pointer-up and an interrupted
+  // lost-pointer-capture so the gesture can never be left "live".
+  const stopDrag = () => {
     draggingRef.current = false;
     if (autoScrollRef.current != null) {
       cancelAnimationFrame(autoScrollRef.current);
       autoScrollRef.current = null;
     }
+  };
+
+  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    stopDrag();
     scrollRef.current?.releasePointerCapture(e.pointerId);
     // A click (no drag) on the already-focused cell enters edit mode.
     const editCell = pendingEditRef.current;
@@ -141,5 +148,15 @@ export function useDragSelect<T>(args: {
     if (editCell && !movedRef.current) beginEdit(editCell);
   };
 
-  return { onPointerDown, onPointerMove, onPointerUp };
+  // Pointer capture was lost WITHOUT a pointer-up — touch `pointercancel`, the captured node
+  // re-rendering out, or another gesture stealing capture. Without this the drag would never
+  // end: `draggingRef` stays true, so the auto-scroll RAF keeps rescheduling (scrolling every
+  // frame if the pointer sat in an edge band) and `onPointerMove` keeps extending the range on
+  // plain hover. An interrupted gesture is an abort, so we drop the pending click-to-edit.
+  const onLostPointerCapture = () => {
+    stopDrag();
+    pendingEditRef.current = null;
+  };
+
+  return { onPointerDown, onPointerMove, onPointerUp, onLostPointerCapture };
 }

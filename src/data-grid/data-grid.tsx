@@ -283,6 +283,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   const onLostPointerCapture = () => {
     colResize.onLostPointerCapture();
     colDrag.onLostPointerCapture();
+    dragSel.onLostPointerCapture();
   };
 
   const { onKeyDown } = useGridKeyboard({
