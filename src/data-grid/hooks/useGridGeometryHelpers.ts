@@ -44,9 +44,43 @@ export function useGridGeometryHelpers<T>(args: {
   const { scrollRef, layout, rows, rowHeight } = args;
   const { zones, left, center, right, gutterW, leftBand, columnOrder, placementMap } = layout;
 
-  // Map a viewport point to a cell. Zone is chosen by screen band (the gutter + frozen zones are
-  // pinned to the viewport edges); the header strip and the gutter return null (not selectable).
-  // Row/column clamp to the grid edges so a drag past the edge still resolves to the last cell.
+  // Which zone a viewport-local x falls in, plus that zone's columns, layout, and the zone-local x.
+  // The single source of truth for the gutter/left/center/right banding shared by hitTest,
+  // headerHitTest, and headerResizeHitTest — a band-boundary or scroll-offset fix lands here once.
+  // Returns null over the checkbox gutter or for an empty zone (neither is a hit).
+  const resolveZone = (
+    localX: number,
+    viewportW: number,
+    scrollLeft: number,
+  ): { zone: Zone; cols: Column<T>[]; zl: ZoneLayout; zoneX: number } | null => {
+    if (gutterW > 0 && localX < gutterW) return null; // over the checkbox gutter
+    let zone: Zone;
+    let cols: Column<T>[];
+    let zl: ZoneLayout;
+    let zoneX: number;
+    if (left.total > 0 && localX < leftBand) {
+      zone = "left";
+      cols = zones.left;
+      zl = left;
+      zoneX = localX - gutterW;
+    } else if (right.total > 0 && localX >= viewportW - right.total) {
+      zone = "right";
+      cols = zones.right;
+      zl = right;
+      zoneX = localX - (viewportW - right.total);
+    } else {
+      zone = "center";
+      cols = zones.center;
+      zl = center;
+      zoneX = localX - leftBand + scrollLeft;
+    }
+    if (cols.length === 0) return null;
+    return { zone, cols, zl, zoneX };
+  };
+
+  // Map a viewport point to a cell. Zone is chosen by `resolveZone`'s screen banding; the header strip
+  // and the gutter return null (not selectable). Row/column clamp to the grid edges so a drag past the
+  // edge still resolves to the last cell.
   const hitTest = (clientX: number, clientY: number): CellCoord | null => {
     const el = scrollRef.current;
     if (!el || columnOrder.length === 0) return null;
@@ -60,40 +94,21 @@ export function useGridGeometryHelpers<T>(args: {
       rows.length - 1,
     );
 
-    const localX = clientX - rect.left;
-    const viewportW = el.clientWidth;
-    if (gutterW > 0 && localX < gutterW) return null; // over the checkbox gutter
-
-    let cols: Column<T>[];
-    let offsets: number[];
-    let zoneX: number;
-    if (left.total > 0 && localX < leftBand) {
-      cols = zones.left;
-      offsets = left.offsets;
-      zoneX = localX - gutterW;
-    } else if (right.total > 0 && localX >= viewportW - right.total) {
-      cols = zones.right;
-      offsets = right.offsets;
-      zoneX = localX - (viewportW - right.total);
-    } else {
-      cols = zones.center;
-      offsets = center.offsets;
-      zoneX = localX - leftBand + el.scrollLeft;
-    }
-    if (cols.length === 0) return null;
-    const i = colIndexAtX(offsets, zoneX);
+    const r = resolveZone(clientX - rect.left, el.clientWidth, el.scrollLeft);
+    if (!r) return null;
+    const i = colIndexAtX(r.zl.offsets, r.zoneX);
     if (i < 0) return null;
-    const col = cols[i];
+    const col = r.cols[i];
     // Action columns are non-selectable — a click there isn't a cell hit (no focus/drag/auto-scroll),
     // so interactive content inside handles its own clicks with no extra wiring.
     if (!col || col.type === "action") return null;
     return { rowIndex, columnId: col.id };
   };
 
-  // Map a viewport point in the HEADER strip to the header it's over (P7). Mirrors `hitTest`'s
-  // zone-band detection (for `vpY < rowHeight`, the header strip) AND its `type: 'action'`
-  // exclusion: an action column is a pure UI affordance (D10), so the grid skips it for every
-  // interaction — drag-reorder included (grabbing a button column to sort it is meaningless).
+  // Map a viewport point in the HEADER strip to the header it's over (P7). Shares `resolveZone`'s
+  // banding AND `hitTest`'s `type: 'action'` exclusion: an action column is a pure UI affordance
+  // (D10), so the grid skips it for every interaction — drag-reorder included (grabbing a button
+  // column to sort it is meaningless).
   const headerHitTest = (
     clientX: number,
     clientY: number,
@@ -105,42 +120,18 @@ export function useGridGeometryHelpers<T>(args: {
     const vpY = clientY - rect.top;
     if (vpY < 0 || vpY >= rowHeight) return null; // only the header strip
 
-    const localX = clientX - rect.left;
-    const viewportW = el.clientWidth;
-    if (gutterW > 0 && localX < gutterW) return null; // over the checkbox gutter
-
-    let cols: Column<T>[];
-    let offsets: number[];
-    let zoneX: number;
-    let zone: Zone;
-    if (left.total > 0 && localX < leftBand) {
-      cols = zones.left;
-      offsets = left.offsets;
-      zoneX = localX - gutterW;
-      zone = "left";
-    } else if (right.total > 0 && localX >= viewportW - right.total) {
-      cols = zones.right;
-      offsets = right.offsets;
-      zoneX = localX - (viewportW - right.total);
-      zone = "right";
-    } else {
-      cols = zones.center;
-      offsets = center.offsets;
-      zoneX = localX - leftBand + el.scrollLeft;
-      zone = "center";
-    }
-    if (cols.length === 0) return null;
-    const i = colIndexAtX(offsets, zoneX);
-    const col = cols[i];
+    const r = resolveZone(clientX - rect.left, el.clientWidth, el.scrollLeft);
+    if (!r) return null;
+    const i = colIndexAtX(r.zl.offsets, r.zoneX);
+    const col = r.cols[i];
     if (!col || col.type === "action") return null;
-    return { columnId: col.id, zone, sourceIndex: i };
+    return { columnId: col.id, zone: r.zone, sourceIndex: i };
   };
 
   // Map a header-strip point to a column resize handle (D12): the pointer must be within
   // RESIZE_HANDLE_WIDTH of a column's RIGHT boundary, and a boundary belongs to the column on its
-  // LEFT — that's the one a drag resizes. Mirrors `headerHitTest`'s zone banding (only the center
-  // adds `scrollLeft`). `type: 'action'` / `resizable: false` columns are inert (no handle), exactly
-  // as they're inert for reorder.
+  // LEFT — that's the one a drag resizes. Shares `resolveZone`'s banding. `type: 'action'` /
+  // `resizable: false` columns are inert (no handle), exactly as they're inert for reorder.
   const headerResizeHitTest = (clientX: number, clientY: number) => {
     const el = scrollRef.current;
     if (!el || columnOrder.length === 0) return null;
@@ -149,31 +140,9 @@ export function useGridGeometryHelpers<T>(args: {
     const vpY = clientY - rect.top;
     if (vpY < 0 || vpY >= rowHeight) return null; // only the header strip
 
-    const localX = clientX - rect.left;
-    const viewportW = el.clientWidth;
-    if (gutterW > 0 && localX < gutterW) return null; // over the checkbox gutter
-
-    let cols: Column<T>[];
-    let zl: ZoneLayout;
-    let zoneX: number;
-    let zone: Zone;
-    if (left.total > 0 && localX < leftBand) {
-      cols = zones.left;
-      zl = left;
-      zoneX = localX - gutterW;
-      zone = "left";
-    } else if (right.total > 0 && localX >= viewportW - right.total) {
-      cols = zones.right;
-      zl = right;
-      zoneX = localX - (viewportW - right.total);
-      zone = "right";
-    } else {
-      cols = zones.center;
-      zl = center;
-      zoneX = localX - leftBand + el.scrollLeft;
-      zone = "center";
-    }
-    if (cols.length === 0) return null;
+    const r = resolveZone(clientX - rect.left, el.clientWidth, el.scrollLeft);
+    if (!r) return null;
+    const { cols, zl, zone, zoneX } = r;
 
     // The pointer can sit just inside the column whose right edge it's near, or just past that
     // boundary in the next column — so test the column containing zoneX and its left neighbour.
