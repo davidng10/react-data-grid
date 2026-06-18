@@ -4,37 +4,24 @@ import type {
   CellCommit,
   Column,
   ColumnId,
-  FrozenZone,
   GridSelection,
   RowId,
 } from "./core/types";
-import { cellKey } from "./core/types";
 import { createGridStore } from "./core/store/grid-store";
 import { createEditStore } from "./core/store/edit-store";
 import { createPendingStore } from "./core/store/pending-store";
 import { createDragStore } from "./core/store/drag-store";
 import { createResizeStore } from "./core/store/resize-store";
 import { EditorPortal } from "./editors/EditorPortal";
-import { PendingOverlay } from "./editors/PendingOverlay";
 import {
   DEFAULT_ROW_HEIGHT,
-  HEADER_BG,
-  HEADER_BORDER,
-  FROZEN_BG,
   DEFAULT_OVERSCAN_COLS,
   DEFAULT_OVERSCAN_ROWS,
 } from "./internal/constants";
-import { FREEZE_DIVIDER_LEFT, FREEZE_DIVIDER_RIGHT } from "./internal/style";
-import type { ZoneLayout } from "./internal/layout";
 import { composePointerGestures } from "./internal/pointer-gestures";
-import { readContent } from "./internal/read-content";
-import { Cell } from "./components/Cell";
-import { HeaderCell } from "./components/HeaderCell";
-import { DragOverlay } from "./components/DragOverlay";
-import { EmptyRowsLayer } from "./components/EmptyRowsLayer";
-import { ResizeOverlay } from "./components/ResizeOverlay";
+import { GridZone } from "./components/GridZone";
+import type { PlacedCol } from "./components/GridZone";
 import { RowGutter } from "./components/RowGutter";
-import { SelectionOverlay } from "./components/SelectionOverlay";
 import { useGridLayout } from "./hooks/useGridLayout";
 import { useGridGeometryHelpers } from "./hooks/useGridGeometryHelpers";
 import { useCellEditing } from "./hooks/useCellEditing";
@@ -282,100 +269,43 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   const rowIdAt = (index: number) => getRowId(rows[index], index);
   const getAllRowIds = () => rows.map((row, i) => getRowId(row, i));
 
-  // Renders a frozen zone: a `sticky; left|right: 0` flex item (z 2 — above the scrolling
-  // center) containing its own `sticky; top: 0` header row (the corner) over an opaque body
-  // band, plus the zone's selection overlay. Always-rendered columns × the windowed rows. The
-  // left zone sticks at `leftBand`'s gutter offset so it sits just right of the checkbox gutter.
-  const renderFrozen = (
-    side: FrozenZone,
-    cols: Column<T>[],
-    layout: ZoneLayout,
-  ) => {
-    if (cols.length === 0) return null;
-    const stick: CSSProperties =
-      side === "left"
-        ? { left: gutterW, ...FREEZE_DIVIDER_LEFT }
-        : { right: 0, ...FREEZE_DIVIDER_RIGHT };
-    return (
-      <div
-        style={{
-          flex: `0 0 ${layout.total}px`,
-          position: "sticky",
-          zIndex: 2,
-          ...stick,
-        }}
-      >
-        {/* corner: sticky on both axes (this zone is sticky-left/right, the row is sticky-top) */}
-        <div
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 1,
-            height: rowHeight,
-            background: HEADER_BG,
-            borderBottom: HEADER_BORDER,
-          }}
-        >
-          {cols.map((col, i) => (
-            <HeaderCell
-              key={col.id}
-              name={col.name}
-              x={layout.offsets[i]}
-              width={layout.widths[i]}
-              height={rowHeight}
-              frozen={side}
-              draggable={reorderable && col.type !== "action"}
-              resizable={
-                resizeEnabled &&
-                col.type !== "action" &&
-                col.resizable !== false
-              }
-            />
-          ))}
-          <DragOverlay
-            zone={side}
-            dragStore={dragStore}
-            rowHeight={rowHeight}
-          />
-        </div>
-        <div
-          style={{
-            position: "relative",
-            height: totalHeight,
-            background: FROZEN_BG,
-          }}
-        >
-          <EmptyRowsLayer rowHeight={rowHeight} />
-          {vRows.map((vr) => {
-            const row = rows[vr.index];
-            const rowId = getRowId(row, vr.index);
-            return cols.map((col, i) => (
-              <Cell
-                key={cellKey(rowId, col.id)}
-                content={readContent(col, row, vr.index, rowId)}
-                x={layout.offsets[i]}
-                y={vr.start}
-                width={layout.widths[i]}
-                height={vr.size}
-                frozen={side}
-              />
-            ));
-          })}
-          <SelectionOverlay
-            zone={side}
-            store={store}
-            editStore={editStore}
-            geom={geom}
-          />
-          <PendingOverlay zone={side} pendingStore={pendingStore} geom={geom} />
-        </div>
-        <ResizeOverlay
-          zone={side}
-          resizeStore={resizeStore}
-          height={rowHeight + totalHeight}
-        />
-      </div>
-    );
+  // The windowing seam (D5): which columns each zone renders, and at what zone-local x/width. Both
+  // frozen zones render ALL their columns at their layout offsets; the center renders only the
+  // windowed `vCols`, with the center scroll margin folded into `x` here so GridZone never needs to
+  // know about scroll margins or virtualization. The same list drives a zone's header and body rows.
+  const leftPlaced: PlacedCol<T>[] = zones.left.map((col, i) => ({
+    col,
+    x: left.offsets[i],
+    width: left.widths[i],
+  }));
+  const rightPlaced: PlacedCol<T>[] = zones.right.map((col, i) => ({
+    col,
+    x: right.offsets[i],
+    width: right.widths[i],
+  }));
+  const centerPlaced: PlacedCol<T>[] = vCols.map((vc) => ({
+    col: zones.center[vc.index],
+    x: vc.start - centerScrollMargin,
+    width: vc.size,
+  }));
+
+  // Everything a GridZone needs that's identical across the three zones — bundled once so each zone
+  // only varies by `zone` / `placedCols` / `total`.
+  const zoneProps = {
+    gutterW,
+    rowHeight,
+    totalHeight,
+    vRows,
+    rows,
+    getRowId,
+    reorderable,
+    resizeEnabled,
+    store,
+    editStore,
+    dragStore,
+    pendingStore,
+    resizeStore,
+    geom,
   };
 
   // Single native scroll container. Inside it a flex row holds the gutter + three zones: the
@@ -423,92 +353,31 @@ export function DataGrid<T>(props: DataGridProps<T>) {
             />
           )}
 
-          {renderFrozen("left", zones.left, left)}
-
-          {/* center zone — the only horizontally windowed zone */}
-          <div style={{ flex: `0 0 ${center.total}px`, position: "relative" }}>
-            {/* sticky header — same scroll as the body, so it never trails */}
-            <div
-              style={{
-                position: "sticky",
-                top: 0,
-                zIndex: 1,
-                height: rowHeight,
-                background: HEADER_BG,
-                borderBottom: HEADER_BORDER,
-              }}
-            >
-              {vCols.map((vc) => {
-                const col = zones.center[vc.index];
-                return (
-                  <HeaderCell
-                    key={col.id}
-                    name={col.name}
-                    x={vc.start - centerScrollMargin}
-                    width={vc.size}
-                    height={rowHeight}
-                    draggable={reorderable && col.type !== "action"}
-                    resizable={
-                      resizeEnabled &&
-                      col.type !== "action" &&
-                      col.resizable !== false
-                    }
-                  />
-                );
-              })}
-              <DragOverlay
-                zone="center"
-                dragStore={dragStore}
-                rowHeight={rowHeight}
-              />
-            </div>
-
-            {/* body */}
-            <div
-              style={{
-                position: "relative",
-                height: totalHeight,
-                background: FROZEN_BG,
-              }}
-            >
-              <EmptyRowsLayer rowHeight={rowHeight} />
-              {vRows.map((vr) => {
-                const row = rows[vr.index];
-                const rowId = getRowId(row, vr.index);
-                return vCols.map((vc) => {
-                  const col = zones.center[vc.index];
-                  return (
-                    <Cell
-                      key={cellKey(rowId, col.id)}
-                      content={readContent(col, row, vr.index, rowId)}
-                      x={vc.start - centerScrollMargin}
-                      y={vr.start}
-                      width={vc.size}
-                      height={vr.size}
-                    />
-                  );
-                });
-              })}
-              <SelectionOverlay
-                zone="center"
-                store={store}
-                editStore={editStore}
-                geom={geom}
-              />
-              <PendingOverlay
-                zone="center"
-                pendingStore={pendingStore}
-                geom={geom}
-              />
-            </div>
-            <ResizeOverlay
-              zone="center"
-              resizeStore={resizeStore}
-              height={rowHeight + totalHeight}
+          {/* frozen zones render only when non-empty; the center always renders (even width 0) */}
+          {leftPlaced.length > 0 && (
+            <GridZone
+              zone="left"
+              placedCols={leftPlaced}
+              total={left.total}
+              {...zoneProps}
             />
-          </div>
+          )}
 
-          {renderFrozen("right", zones.right, right)}
+          <GridZone
+            zone="center"
+            placedCols={centerPlaced}
+            total={center.total}
+            {...zoneProps}
+          />
+
+          {rightPlaced.length > 0 && (
+            <GridZone
+              zone="right"
+              placedCols={rightPlaced}
+              total={right.total}
+              {...zoneProps}
+            />
+          )}
         </div>
       </div>
 
