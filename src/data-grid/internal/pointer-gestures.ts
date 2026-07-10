@@ -23,11 +23,11 @@ export interface PointerGestureHandlers {
  * Compose ordered gestures into container handlers. Only the primary button starts a gesture.
  */
 export function composePointerGestures(
-  gestures: PointerGesture[],
+  gestures: PointerGesture[]
 ): PointerGestureHandlers {
   const route = (
     e: ReactPointerEvent<HTMLDivElement>,
-    pick: (g: PointerGesture) => PointerHandler | undefined,
+    pick: (g: PointerGesture) => PointerHandler | undefined
   ) => {
     for (const g of gestures) {
       if (pick(g)?.(e)) return; // first gesture to consume the event wins; the rest are skipped

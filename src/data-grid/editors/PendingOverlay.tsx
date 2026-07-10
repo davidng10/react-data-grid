@@ -2,11 +2,13 @@
 // subscribes to pending state.
 
 import { memo, useEffect, useRef, useSyncExternalStore } from "react";
-import type { CSSProperties } from "react";
+
 import { cellToZoneRect } from "../core/selection/geometry";
+import { ERROR_FLASH_MS } from "../core/store/pending-store";
+
+import type { CSSProperties } from "react";
 import type { GridGeometry, Zone, ZoneRect } from "../core/selection/geometry";
 import type { PendingStore } from "../core/store/pending-store";
-import { ERROR_FLASH_MS } from "../core/store/pending-store";
 
 const PENDING_BG = "#ffffff";
 const PENDING_FG = "#78716c";
@@ -108,7 +110,7 @@ function ErrorFlash(props: { rect: ZoneRect }) {
         // Hold the final (transparent) frame; without this the element snaps back to opacity 1
         // when the animation ends and "flashes" a second time before the store entry is cleared.
         fill: "forwards",
-      },
+      }
     );
     return () => anim.cancel();
   }, []);
@@ -133,7 +135,7 @@ export const PendingOverlay = memo(function PendingOverlay(props: {
   const { zone, pendingStore, geom } = props;
   const pending = useSyncExternalStore(
     pendingStore.subscribe,
-    pendingStore.getSnapshot,
+    pendingStore.getSnapshot
   );
   if (pending.size === 0) return null;
 
@@ -157,7 +159,7 @@ export const PendingOverlay = memo(function PendingOverlay(props: {
           <ErrorFlash key={it.key} rect={it.rect} />
         ) : (
           <PendingBox key={it.key} rect={it.rect} value={it.value} />
-        ),
+        )
       )}
     </div>
   );

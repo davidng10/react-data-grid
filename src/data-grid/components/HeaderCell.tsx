@@ -1,7 +1,9 @@
 import { memo } from "react";
-import type { FrozenZone } from "../core/types";
-import { cellBase } from "../internal/style";
+
 import { HEADER_BG, RESIZE_HANDLE_WIDTH } from "../internal/constants";
+import { cellBase } from "../internal/style";
+
+import type { FrozenZone } from "../core/types";
 
 export const HeaderCell = memo(function HeaderCell(props: {
   name: string;

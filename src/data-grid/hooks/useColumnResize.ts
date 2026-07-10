@@ -1,10 +1,12 @@
 import { useRef } from "react";
+
+import { MIN_COL_WIDTH } from "../internal/constants";
+import { clampNum } from "../internal/layout";
+
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
-import type { ColumnId } from "../core/types";
 import type { Zone } from "../core/selection/geometry";
 import type { ResizeStore } from "../core/store/resize-store";
-import { clampNum } from "../internal/layout";
-import { MIN_COL_WIDTH } from "../internal/constants";
+import type { ColumnId } from "../core/types";
 import type { GridGeometryHelpers } from "./useGridGeometryHelpers";
 
 export interface ColumnResizeHandlers {
@@ -78,7 +80,7 @@ export function useColumnResize<T>(args: {
     const width = clampNum(
       src.startWidth + (e.clientX - src.originX),
       src.minWidth,
-      src.maxWidth,
+      src.maxWidth
     );
     src.width = width;
     resizeStore.setIndicator(src.colOffset + width); // overlay-only: the body never re-renders here

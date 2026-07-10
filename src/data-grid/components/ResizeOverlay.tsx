@@ -1,7 +1,9 @@
 import { memo, useSyncExternalStore } from "react";
-import type { ResizeStore } from "../core/store/resize-store";
-import type { Zone } from "../core/selection/geometry";
+
 import { RESIZE_LINE_COLOR } from "../internal/constants";
+
+import type { Zone } from "../core/selection/geometry";
+import type { ResizeStore } from "../core/store/resize-store";
 
 // Draws the resize guide in the active zone's coordinate space.
 export const ResizeOverlay = memo(function ResizeOverlay(props: {
@@ -13,7 +15,7 @@ export const ResizeOverlay = memo(function ResizeOverlay(props: {
   const { zone, resizeStore, height } = props;
   const resize = useSyncExternalStore(
     resizeStore.subscribe,
-    resizeStore.getSnapshot,
+    resizeStore.getSnapshot
   );
   if (resize.status !== "resizing" || resize.zone !== zone) return null;
   return (

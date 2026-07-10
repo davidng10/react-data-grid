@@ -1,23 +1,24 @@
-import type { CSSProperties, ReactNode } from "react";
-import type { VirtualItem } from "@tanstack/react-virtual";
-import type { Column, RowId } from "../core/types";
 import { cellKey } from "../core/types";
-import type { GridGeometry, Zone } from "../core/selection/geometry";
-import type { GridStore } from "../core/store/grid-store";
-import type { EditStore } from "../core/store/edit-store";
-import type { DragStore } from "../core/store/drag-store";
-import type { PendingStore } from "../core/store/pending-store";
-import type { ResizeStore } from "../core/store/resize-store";
-import { HEADER_BG, HEADER_BORDER, FROZEN_BG } from "../internal/constants";
-import { FREEZE_DIVIDER_LEFT, FREEZE_DIVIDER_RIGHT } from "../internal/style";
+import { PendingOverlay } from "../editors/PendingOverlay";
+import { FROZEN_BG, HEADER_BG, HEADER_BORDER } from "../internal/constants";
 import { readContent } from "../internal/read-content";
+import { FREEZE_DIVIDER_LEFT, FREEZE_DIVIDER_RIGHT } from "../internal/style";
 import { Cell } from "./Cell";
-import { HeaderCell } from "./HeaderCell";
 import { DragOverlay } from "./DragOverlay";
 import { EmptyRowsLayer } from "./EmptyRowsLayer";
-import { SelectionOverlay } from "./SelectionOverlay";
+import { HeaderCell } from "./HeaderCell";
 import { ResizeOverlay } from "./ResizeOverlay";
-import { PendingOverlay } from "../editors/PendingOverlay";
+import { SelectionOverlay } from "./SelectionOverlay";
+
+import type { VirtualItem } from "@tanstack/react-virtual";
+import type { CSSProperties, ReactNode } from "react";
+import type { GridGeometry, Zone } from "../core/selection/geometry";
+import type { DragStore } from "../core/store/drag-store";
+import type { EditStore } from "../core/store/edit-store";
+import type { GridStore } from "../core/store/grid-store";
+import type { PendingStore } from "../core/store/pending-store";
+import type { ResizeStore } from "../core/store/resize-store";
+import type { Column, RowId } from "../core/types";
 
 /** A rendered column with its resolved zone-local position. */
 export type PlacedCol<T> = { col: Column<T>; x: number; width: number };

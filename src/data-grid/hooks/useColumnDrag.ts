@@ -1,17 +1,19 @@
 import { useEffect, useRef } from "react";
-import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
-import type { ColumnId } from "../core/types";
+
 import {
   dragBounds,
   dropIndexAtX,
   reorderWithinZone,
 } from "../core/selection/geometry";
+import { edgeScrollDelta } from "../internal/auto-scroll";
+import { DRAG_THRESHOLD } from "../internal/constants";
+
+import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import type { Zone } from "../core/selection/geometry";
 import type { DragStore } from "../core/store/drag-store";
-import { DRAG_THRESHOLD } from "../internal/constants";
-import { edgeScrollDelta } from "../internal/auto-scroll";
-import type { GridLayout } from "./useGridLayout";
+import type { ColumnId } from "../core/types";
 import type { GridGeometryHelpers } from "./useGridGeometryHelpers";
+import type { GridLayout } from "./useGridLayout";
 
 export interface ColumnDragHandlers {
   /** Returns true when the gesture consumed the event (a header-drag is in progress). */
@@ -31,7 +33,14 @@ export function useColumnDrag<T>(args: {
   helpers: GridGeometryHelpers<T>;
   onColumnOrderChange?: (order: ColumnId[]) => void;
 }): ColumnDragHandlers {
-  const { reorderable, dragStore, scrollRef, layout, helpers, onColumnOrderChange } = args;
+  const {
+    reorderable,
+    dragStore,
+    scrollRef,
+    layout,
+    helpers,
+    onColumnOrderChange,
+  } = args;
   const { leftBand, right, columnOrder, placementMap } = layout;
   const { headerHitTest, zoneColsFor, layoutFor, zoneLocalXFor } = helpers;
 
@@ -64,7 +73,10 @@ export function useColumnDrag<T>(args: {
       return;
     }
     // Frozen zones are fully rendered and never need horizontal auto-scroll.
-    const { dx } = edgeScrollDelta(pt, el, { left: leftBand, right: right.total });
+    const { dx } = edgeScrollDelta(pt, el, {
+      left: leftBand,
+      right: right.total,
+    });
     if (dx) {
       el.scrollLeft += dx;
       const zl = layoutFor("center");
@@ -73,7 +85,7 @@ export function useColumnDrag<T>(args: {
         zl.offsets,
         zl.widths,
         zoneX,
-        src.bounds,
+        src.bounds
       );
       dragStore.updateTarget(index, indicatorX);
     }
@@ -85,7 +97,7 @@ export function useColumnDrag<T>(args: {
       if (dragScrollRef.current != null)
         cancelAnimationFrame(dragScrollRef.current);
     },
-    [],
+    []
   );
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>): boolean => {
@@ -121,7 +133,7 @@ export function useColumnDrag<T>(args: {
       zl.offsets,
       zl.widths,
       zoneX,
-      src.bounds,
+      src.bounds
     );
     if (dragging) dragStore.updateTarget(index, indicatorX);
     else {
@@ -158,7 +170,7 @@ export function useColumnDrag<T>(args: {
         columnOrder,
         snap.sourceColumnId,
         snap.targetIndex,
-        (id) => placementMap.get(id)?.zone,
+        (id) => placementMap.get(id)?.zone
       );
       dragStore.end();
       if (next !== columnOrder) onColumnOrderChange?.(next); // same ref ⇒ drop onto self ⇒ no-op

@@ -1,9 +1,15 @@
 import { memo, useSyncExternalStore } from "react";
-import type { GridStore } from "../core/store/grid-store";
-import type { EditStore } from "../core/store/edit-store";
+
 import { cellToZoneRect, rangeToZoneRects } from "../core/selection/geometry";
+import {
+  FOCUS_BORDER,
+  SELECT_BORDER,
+  SELECT_FILL,
+} from "../internal/constants";
+
 import type { GridGeometry, Zone } from "../core/selection/geometry";
-import { SELECT_FILL, SELECT_BORDER, FOCUS_BORDER } from "../internal/constants";
+import type { EditStore } from "../core/store/edit-store";
+import type { GridStore } from "../core/store/grid-store";
 
 // The selection layer for ONE zone. Subscribes to the store (so only this leaf re-renders on a
 // focus/drag change, never the body) and draws the slice of the range + focus that falls in its

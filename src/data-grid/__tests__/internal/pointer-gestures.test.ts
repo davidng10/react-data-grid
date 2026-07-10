@@ -1,9 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import { composePointerGestures } from "../../internal/pointer-gestures";
+
 import type { PointerEvent as ReactPointerEvent } from "react";
-import {
-  composePointerGestures,
-  type PointerGesture,
-} from "../../internal/pointer-gestures";
+import type { PointerGesture } from "../../internal/pointer-gestures";
 
 // The composer only reads `e.button`; everything else is passed through opaquely, so a minimal
 // fake event is enough.

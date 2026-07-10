@@ -1,21 +1,23 @@
 import { useEffect, useRef } from "react";
+
+import { stepCoord } from "../core/selection/geometry";
+import { ERROR_FLASH_MS } from "../core/store/pending-store";
+import { DEFAULT_COL_WIDTH } from "../internal/constants";
+
 import type { RefObject } from "react";
+import type { Direction, GridGeometry } from "../core/selection/geometry";
+import type { EditStore } from "../core/store/edit-store";
+import type { GridStore } from "../core/store/grid-store";
+import type { PendingStore } from "../core/store/pending-store";
 import type {
-  CellCoord,
   CellCommit,
   CellCommitFailure,
+  CellCoord,
   CellEditContext,
   Column,
   ColumnId,
   RowId,
 } from "../core/types";
-import { stepCoord } from "../core/selection/geometry";
-import type { Direction, GridGeometry } from "../core/selection/geometry";
-import type { GridStore } from "../core/store/grid-store";
-import type { EditStore } from "../core/store/edit-store";
-import type { PendingStore } from "../core/store/pending-store";
-import { ERROR_FLASH_MS } from "../core/store/pending-store";
-import { DEFAULT_COL_WIDTH } from "../internal/constants";
 
 const CORRECTIVE_VALIDATION_DELAY_MS = 200;
 
@@ -79,7 +81,7 @@ export function useCellEditing<T>(args: {
       if (correctiveTimerRef.current != null)
         window.clearTimeout(correctiveTimerRef.current);
     },
-    [],
+    []
   );
 
   const isEditable = (cell: CellCoord): boolean => {
@@ -108,7 +110,7 @@ export function useCellEditing<T>(args: {
     scrollCellIntoView(cell);
     editStore.begin(
       cell,
-      initialDraft !== undefined ? initialDraft : col.accessor(row),
+      initialDraft !== undefined ? initialDraft : col.accessor(row)
     );
     return true;
   };
@@ -170,7 +172,7 @@ export function useCellEditing<T>(args: {
     clearCorrectiveTimer();
     correctiveTimerRef.current = window.setTimeout(
       () => correctiveValidationRef.current(),
-      CORRECTIVE_VALIDATION_DELAY_MS,
+      CORRECTIVE_VALIDATION_DELAY_MS
     );
   };
 

@@ -30,7 +30,11 @@ export default defineConfig({
       // Measure only the shippable grid's runtime logic — not the tests, the type contract
       // (interfaces erase at compile time), the demo harness, or config.
       include: ["src/data-grid/**"],
-      exclude: ["src/data-grid/__tests__/**", "src/data-grid/core/types/**", "**/*.d.ts"],
+      exclude: [
+        "src/data-grid/__tests__/**",
+        "src/data-grid/core/types/**",
+        "**/*.d.ts",
+      ],
     },
   },
 });

@@ -1,4 +1,4 @@
-import { EDGE_ZONE, EDGE_SPEED } from "./constants";
+import { EDGE_SPEED, EDGE_ZONE } from "./constants";
 
 // Shared edge auto-scroll calculation for selection and column dragging.
 
@@ -17,7 +17,7 @@ export interface EdgeInsets {
 export function edgeScrollDelta(
   pt: { x: number; y: number },
   el: HTMLElement,
-  insets: EdgeInsets,
+  insets: EdgeInsets
 ): { dx: number; dy: number } {
   const rect = el.getBoundingClientRect();
   let dx = 0;

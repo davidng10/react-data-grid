@@ -1,24 +1,19 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Button, Select } from "antd";
-import {
-  makeColumns,
-  makeRows,
-  STRESS,
-  WORDS,
-  type DemoColumn,
-  type DemoRow,
-} from "../fixtures";
-import {
-  DataGrid,
-  cellKey,
-  type CellCommit,
-  type CellKey,
-  type ColumnId,
-  type GridStats,
-  type FrozenZone,
-} from "../../data-grid";
-import { PerfOverlay } from "../PerfOverlay";
+
+import { DataGrid, cellKey } from "../../data-grid";
 import { ControlPanel } from "../ControlPanel";
+import { PerfOverlay } from "../PerfOverlay";
+import { STRESS, WORDS, makeColumns, makeRows } from "../fixtures";
+
+import type {
+  CellCommit,
+  CellKey,
+  ColumnId,
+  FrozenZone,
+  GridStats,
+} from "../../data-grid";
+import type { DemoColumn, DemoRow } from "../fixtures";
 
 const MAX_FREEZE_PER_SIDE = 4;
 
@@ -69,14 +64,14 @@ export function GridPlayground() {
   // only sticks because we store the emitted id list and feed it back. `undefined` = the columns'
   // natural order; the grid sorts WITHIN each frozen zone by this list.
   const [columnOrder, setColumnOrder] = useState<ColumnId[] | undefined>(
-    undefined,
+    undefined
   );
 
   // The parent-owned, authoritative edit store (R4): a sparse override map keyed by stable
   // RowId:ColumnId. The grid never mutates row data — committed values land here and flow back in
   // through the editable columns' `accessor. This override state exist because the synthetic data is generated.
   const [overrides, setOverrides] = useState<Map<CellKey, string>>(
-    () => new Map(),
+    () => new Map()
   );
 
   // Fake async commit (R4): ~700ms, ~30% rejection, so the demo exercises submitting + error +
@@ -177,7 +172,7 @@ export function GridPlayground() {
       }),
       ACTIONS_COLUMN, // always frozen-right, last position
     ],
-    [baseColumns, freezeLeft, freezeRight, overrides],
+    [baseColumns, freezeLeft, freezeRight, overrides]
   );
 
   const statsRef = useRef<GridStats>({

@@ -1,7 +1,9 @@
 import { memo } from "react";
+
+import { cellBase } from "../internal/style";
+
 import type { ReactNode } from "react";
 import type { FrozenZone } from "../core/types";
-import { cellBase } from "../internal/style";
 
 // Primitive content keeps memoization effective; custom renderers may pass a fresh React node.
 export const Cell = memo(function Cell(props: {

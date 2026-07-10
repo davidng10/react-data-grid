@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react";
-import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
-import type { CellCoord } from "../core/types";
-import type { GridStore } from "../core/store/grid-store";
+
 import { edgeScrollDelta } from "../internal/auto-scroll";
-import type { GridLayout } from "./useGridLayout";
+
+import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
+import type { GridStore } from "../core/store/grid-store";
+import type { CellCoord } from "../core/types";
 import type { GridGeometryHelpers } from "./useGridGeometryHelpers";
+import type { GridLayout } from "./useGridLayout";
 
 export interface DragSelectHandlers {
   onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void;
@@ -77,7 +79,7 @@ export function useDragSelect<T>(args: {
       if (autoScrollRef.current != null)
         cancelAnimationFrame(autoScrollRef.current);
     },
-    [],
+    []
   );
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {

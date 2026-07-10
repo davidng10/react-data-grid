@@ -6,7 +6,7 @@ export function readContent<T>(
   col: Column<T>,
   row: T,
   rowIndex: number,
-  rowId: RowId,
+  rowId: RowId
 ): ReactNode {
   const value = col.accessor(row);
   return col.renderRead

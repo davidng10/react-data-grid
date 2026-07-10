@@ -1,21 +1,22 @@
-import type { RefObject } from "react";
-import type { CellCoord, Column, ColumnId } from "../core/types";
-import type { Zone } from "../core/selection/geometry";
-import { colIndexAtX, clampNum } from "../internal/layout";
-import type { ZoneLayout } from "../internal/layout";
 import { RESIZE_HANDLE_WIDTH } from "../internal/constants";
+import { clampNum, colIndexAtX } from "../internal/layout";
+
+import type { RefObject } from "react";
+import type { Zone } from "../core/selection/geometry";
+import type { CellCoord, Column, ColumnId } from "../core/types";
+import type { ZoneLayout } from "../internal/layout";
 import type { GridLayout } from "./useGridLayout";
 
 export interface GridGeometryHelpers<T> {
   hitTest: (clientX: number, clientY: number) => CellCoord | null;
   headerHitTest: (
     clientX: number,
-    clientY: number,
+    clientY: number
   ) => { columnId: ColumnId; zone: Zone; sourceIndex: number } | null;
   /** Map a point near a header's right edge to its resize handle. */
   headerResizeHitTest: (
     clientX: number,
-    clientY: number,
+    clientY: number
   ) => {
     columnId: ColumnId;
     zone: Zone;
@@ -42,7 +43,16 @@ export function useGridGeometryHelpers<T>(args: {
   rowHeight: number;
 }): GridGeometryHelpers<T> {
   const { scrollRef, layout, rows, rowHeight } = args;
-  const { zones, left, center, right, gutterW, leftBand, columnOrder, placementMap } = layout;
+  const {
+    zones,
+    left,
+    center,
+    right,
+    gutterW,
+    leftBand,
+    columnOrder,
+    placementMap,
+  } = layout;
 
   // Which zone a viewport-local x falls in, plus that zone's columns, layout, and the zone-local x.
   // The single source of truth for the gutter/left/center/right banding shared by hitTest,
@@ -51,8 +61,13 @@ export function useGridGeometryHelpers<T>(args: {
   const resolveZone = (
     localX: number,
     viewportW: number,
-    scrollLeft: number,
-  ): { zone: Zone; cols: Column<T>[]; zl: ZoneLayout; zoneX: number } | null => {
+    scrollLeft: number
+  ): {
+    zone: Zone;
+    cols: Column<T>[];
+    zl: ZoneLayout;
+    zoneX: number;
+  } | null => {
     if (gutterW > 0 && localX < gutterW) return null; // over the checkbox gutter
     let zone: Zone;
     let cols: Column<T>[];
@@ -91,7 +106,7 @@ export function useGridGeometryHelpers<T>(args: {
     const rowIndex = clampNum(
       Math.floor((vpY - rowHeight + el.scrollTop) / rowHeight),
       0,
-      rows.length - 1,
+      rows.length - 1
     );
 
     const r = resolveZone(clientX - rect.left, el.clientWidth, el.scrollLeft);
@@ -108,7 +123,7 @@ export function useGridGeometryHelpers<T>(args: {
   // Action columns are excluded because their interactive content owns pointer input.
   const headerHitTest = (
     clientX: number,
-    clientY: number,
+    clientY: number
   ): { columnId: ColumnId; zone: Zone; sourceIndex: number } | null => {
     const el = scrollRef.current;
     if (!el || columnOrder.length === 0) return null;
@@ -147,8 +162,15 @@ export function useGridGeometryHelpers<T>(args: {
       const boundaryX = zl.offsets[c] + zl.widths[c];
       if (Math.abs(zoneX - boundaryX) <= RESIZE_HANDLE_WIDTH) {
         const col = cols[c];
-        if (!col || col.type === "action" || col.resizable === false) return null;
-        return { columnId: col.id, zone, localIndex: c, startWidth: zl.widths[c], boundaryX };
+        if (!col || col.type === "action" || col.resizable === false)
+          return null;
+        return {
+          columnId: col.id,
+          zone,
+          localIndex: c,
+          startWidth: zl.widths[c],
+          boundaryX,
+        };
       }
     }
     return null;
@@ -160,7 +182,11 @@ export function useGridGeometryHelpers<T>(args: {
 
   // The zone's columns (for barrier detection during a drag).
   const zoneColsFor = (zone: Zone) =>
-    zone === "left" ? zones.left : zone === "right" ? zones.right : zones.center;
+    zone === "left"
+      ? zones.left
+      : zone === "right"
+        ? zones.right
+        : zones.center;
 
   // A clientX → zone-local x for `zone`, clamped to the zone so a pointer that wanders into another
   // band pins to the source zone's nearest edge, keeping reorder within the zone.
@@ -193,7 +219,8 @@ export function useGridGeometryHelpers<T>(args: {
     if (p && p.zone === "center") {
       const colLeft = leftBand + p.offset;
       const colRight = colLeft + p.width;
-      if (colLeft < el.scrollLeft + leftBand) el.scrollLeft = colLeft - leftBand;
+      if (colLeft < el.scrollLeft + leftBand)
+        el.scrollLeft = colLeft - leftBand;
       else if (colRight > el.scrollLeft + el.clientWidth - right.total) {
         el.scrollLeft = colRight - el.clientWidth + right.total;
       }

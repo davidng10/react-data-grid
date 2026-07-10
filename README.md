@@ -20,46 +20,51 @@ The component is self-contained in `src/data-grid` and is exported from
 `src/data-grid/index.ts`.
 
 ```tsx
-import { useState } from 'react'
-import { DataGrid, type CellCommit, type Column } from './data-grid'
+import { useState } from "react";
+
+import { DataGrid } from "./data-grid";
+
+import type { CellCommit, Column } from "./data-grid";
 
 type Person = {
-  id: number
-  name: string
-  role: string
-}
+  id: number;
+  name: string;
+  role: string;
+};
 
 const columns: Column<Person>[] = [
   {
-    id: 'name',
-    name: 'Name',
+    id: "name",
+    name: "Name",
     width: 220,
-    frozen: 'left',
+    frozen: "left",
     accessor: (row) => row.name,
     editable: true,
   },
   {
-    id: 'role',
-    name: 'Role',
+    id: "role",
+    name: "Role",
     width: 180,
     accessor: (row) => row.role,
     editable: true,
   },
-]
+];
 
 export function PeopleGrid() {
   const [rows, setRows] = useState<Person[]>([
-    { id: 1, name: 'Ada', role: 'Engineer' },
-  ])
-  const [columnOrder, setColumnOrder] = useState(columns.map((column) => column.id))
+    { id: 1, name: "Ada", role: "Engineer" },
+  ]);
+  const [columnOrder, setColumnOrder] = useState(
+    columns.map((column) => column.id)
+  );
 
   const commit = ({ rowId, columnId, nextValue }: CellCommit<Person>) => {
     setRows((current) =>
       current.map((row) =>
-        row.id === rowId ? { ...row, [columnId]: nextValue } : row,
-      ),
-    )
-  }
+        row.id === rowId ? { ...row, [columnId]: nextValue } : row
+      )
+    );
+  };
 
   return (
     <div style={{ height: 480 }}>
@@ -73,7 +78,7 @@ export function PeopleGrid() {
         enableRowSelection
       />
     </div>
-  )
+  );
 }
 ```
 

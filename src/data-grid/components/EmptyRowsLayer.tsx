@@ -1,4 +1,5 @@
 import { memo } from "react";
+
 import { SKELETON_BAR, SKELETON_BG } from "../internal/constants";
 
 const BAR_FILL = 0.5; // bar height as a fraction of the row (the rest is top/bottom padding)
@@ -32,20 +33,20 @@ export const EmptyRowsLayer = memo(function EmptyRowsLayer({
   const leftCap = tile(
     CAP_W,
     rowHeight,
-    `<rect x='0' y='${y}' width='${CAP_W + r}' height='${h}' rx='${r}' ry='${r}' fill='${SKELETON_BAR}'/>`,
+    `<rect x='0' y='${y}' width='${CAP_W + r}' height='${h}' rx='${r}' ry='${r}' fill='${SKELETON_BAR}'/>`
   );
   // Right cap: pushed left so only its RIGHT corners fall inside the viewport (mirror of the above).
   const rightCap = tile(
     CAP_W,
     rowHeight,
-    `<rect x='${-r}' y='${y}' width='${CAP_W + r}' height='${h}' rx='${r}' ry='${r}' fill='${SKELETON_BAR}'/>`,
+    `<rect x='${-r}' y='${y}' width='${CAP_W + r}' height='${h}' rx='${r}' ry='${r}' fill='${SKELETON_BAR}'/>`
   );
   // Middle fill: a square-cornered bar that tiles across the inset content box (the cap zones are
   // padding, so this never reaches the corners the caps round away).
   const mid = tile(
     MID_W,
     rowHeight,
-    `<rect x='0' y='${y}' width='${MID_W}' height='${h}' fill='${SKELETON_BAR}'/>`,
+    `<rect x='0' y='${y}' width='${MID_W}' height='${h}' fill='${SKELETON_BAR}'/>`
   );
 
   return (

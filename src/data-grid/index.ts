@@ -4,7 +4,7 @@
 //
 // Core types are public. Stores and geometry helpers remain implementation details.
 
-export { DataGrid } from './data-grid'
-export type { DataGridProps, GridStats } from './data-grid'
+export { DataGrid } from "./data-grid";
+export type { DataGridProps, GridStats } from "./data-grid";
 
-export * from './core/types'
+export * from "./core/types";

@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useMemo } from "react";
-import type { RefObject } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+
+import {
+  DEFAULT_COL_WIDTH,
+  GUTTER_WIDTH,
+  MIN_COL_WIDTH,
+} from "../internal/constants";
+import { clampNum, zoneLayout } from "../internal/layout";
+
 import type { VirtualItem } from "@tanstack/react-virtual";
-import type { Column, ColumnId } from "../core/types";
+import type { RefObject } from "react";
 import type {
   ColumnPlacement,
   GridGeometry,
   Zone,
 } from "../core/selection/geometry";
-import { zoneLayout, clampNum } from "../internal/layout";
+import type { Column, ColumnId } from "../core/types";
 import type { ZoneLayout } from "../internal/layout";
-import { DEFAULT_COL_WIDTH, GUTTER_WIDTH, MIN_COL_WIDTH } from "../internal/constants";
 
 type CellPlacement = ColumnPlacement & { localIndex: number };
 
@@ -70,9 +76,9 @@ export function useGridLayout<T>(args: {
       clampNum(
         widthOverrides?.[c.id] ?? c.width ?? DEFAULT_COL_WIDTH,
         c.minWidth ?? MIN_COL_WIDTH,
-        c.maxWidth ?? Infinity,
+        c.maxWidth ?? Infinity
       ),
-    [widthOverrides],
+    [widthOverrides]
   );
 
   // Apply controlled order before zoning. A stable sort places unknown ids after listed ids while
@@ -102,9 +108,18 @@ export function useGridLayout<T>(args: {
     return { left, center, right };
   }, [ordered]);
 
-  const left = useMemo(() => zoneLayout(zones.left, widthOf), [zones.left, widthOf]);
-  const center = useMemo(() => zoneLayout(zones.center, widthOf), [zones.center, widthOf]);
-  const right = useMemo(() => zoneLayout(zones.right, widthOf), [zones.right, widthOf]);
+  const left = useMemo(
+    () => zoneLayout(zones.left, widthOf),
+    [zones.left, widthOf]
+  );
+  const center = useMemo(
+    () => zoneLayout(zones.center, widthOf),
+    [zones.center, widthOf]
+  );
+  const right = useMemo(
+    () => zoneLayout(zones.right, widthOf),
+    [zones.right, widthOf]
+  );
 
   // Content x where the left frozen zone begins (after the gutter) and where the center begins
   // (after gutter + left zone). The column virtualizer's window must be offset by the latter.
@@ -146,7 +161,7 @@ export function useGridLayout<T>(args: {
       columnOrder,
       placement: (id) => placementMap.get(id),
     }),
-    [rows.length, rowHeight, columnOrder, placementMap],
+    [rows.length, rowHeight, columnOrder, placementMap]
   );
 
   // TanStack Virtual returns functions that the React compiler cannot safely memoize.

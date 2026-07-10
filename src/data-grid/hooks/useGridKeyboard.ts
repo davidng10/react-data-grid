@@ -1,9 +1,10 @@
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import type { CellCoord } from "../core/types";
 import { stepCoord } from "../core/selection/geometry";
-import type { GridStore } from "../core/store/grid-store";
-import type { EditStore } from "../core/store/edit-store";
 import { ARROW_DIR } from "../internal/layout";
+
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { EditStore } from "../core/store/edit-store";
+import type { GridStore } from "../core/store/grid-store";
+import type { CellCoord } from "../core/types";
 import type { GridLayout } from "./useGridLayout";
 
 // Handles keyboard navigation and edit triggers without subscribing the cell body to either store.

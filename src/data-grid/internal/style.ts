@@ -1,5 +1,6 @@
-import type { CSSProperties } from "react";
 import { FREEZE_DIVIDER_COLOR, FROZEN_BG } from "./constants";
+
+import type { CSSProperties } from "react";
 
 // The freeze dividers overlay the boundary as a box-shadow so they cost zero layout width.
 export const FREEZE_DIVIDER_LEFT: CSSProperties = {

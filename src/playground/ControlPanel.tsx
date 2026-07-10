@@ -121,7 +121,13 @@ function Stepper(props: {
       >
         −
       </button>
-      <span style={{ minWidth: 16, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
+      <span
+        style={{
+          minWidth: 16,
+          textAlign: "center",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
         {value}
       </span>
       <button
@@ -145,7 +151,14 @@ function Segmented(props: {
 }) {
   const { options, value, onChange } = props;
   return (
-    <div style={{ display: "inline-flex", border: "1px solid #d6d3d1", borderRadius: 6, overflow: "hidden" }}>
+    <div
+      style={{
+        display: "inline-flex",
+        border: "1px solid #d6d3d1",
+        borderRadius: 6,
+        overflow: "hidden",
+      }}
+    >
       {options.map((opt) => {
         const active = opt === value;
         return (
@@ -197,17 +210,33 @@ export function ControlPanel(props: ControlPanelProps) {
       <div style={divider} />
 
       <Group label="Freeze left">
-        <Stepper value={freezeLeft} min={0} max={leftMax} onChange={onFreezeLeftChange} suffix="col(s)" />
+        <Stepper
+          value={freezeLeft}
+          min={0}
+          max={leftMax}
+          onChange={onFreezeLeftChange}
+          suffix="col(s)"
+        />
       </Group>
 
       <Group label="Freeze right">
-        <Stepper value={freezeRight} min={0} max={rightMax} onChange={onFreezeRightChange} suffix="col(s)" />
+        <Stepper
+          value={freezeRight}
+          min={0}
+          max={rightMax}
+          onChange={onFreezeRightChange}
+          suffix="col(s)"
+        />
       </Group>
 
       <div style={divider} />
 
       <Group label="Row height">
-        <Segmented options={ROW_HEIGHTS} value={rowHeight} onChange={onRowHeightChange} />
+        <Segmented
+          options={ROW_HEIGHTS}
+          value={rowHeight}
+          onChange={onRowHeightChange}
+        />
       </Group>
     </div>
   );

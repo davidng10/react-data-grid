@@ -1,15 +1,17 @@
 import { useSyncExternalStore } from "react";
-import type { CSSProperties } from "react";
-import type { VirtualItem } from "@tanstack/react-virtual";
-import type { GridStore } from "../core/store/grid-store";
-import type { RowId } from "../core/types";
+
 import {
+  FROZEN_BG,
   GUTTER_WIDTH,
   HEADER_BG,
   HEADER_BORDER,
-  FROZEN_BG,
 } from "../internal/constants";
 import { FREEZE_DIVIDER_LEFT } from "../internal/style";
+
+import type { VirtualItem } from "@tanstack/react-virtual";
+import type { CSSProperties } from "react";
+import type { GridStore } from "../core/store/grid-store";
+import type { RowId } from "../core/types";
 
 // Shell-owned row-selection gutter, pinned at the far left. Subscribes to the store for the
 // selected-row set (a click re-renders only this leaf, never the body). Re-renders on scroll too

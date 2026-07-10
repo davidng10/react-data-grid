@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import { createPendingStore } from "../../../core/store/pending-store";
 
 const A = { rowIndex: 1, columnId: "c1" };

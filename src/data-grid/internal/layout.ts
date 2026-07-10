@@ -1,6 +1,7 @@
-import type { Column } from "../core/types";
-import type { Direction } from "../core/selection/geometry";
 import { DEFAULT_COL_WIDTH } from "./constants";
+
+import type { Direction } from "../core/selection/geometry";
+import type { Column } from "../core/types";
 
 export interface ZoneLayout {
   widths: number[];
@@ -12,7 +13,7 @@ export interface ZoneLayout {
 // `widthOf` lets callers provide resolved widths; other callers use each column's base width.
 export function zoneLayout<T>(
   cols: Column<T>[],
-  widthOf: (col: Column<T>) => number = (c) => c.width ?? DEFAULT_COL_WIDTH,
+  widthOf: (col: Column<T>) => number = (c) => c.width ?? DEFAULT_COL_WIDTH
 ): ZoneLayout {
   const widths = cols.map(widthOf);
   const offsets = new Array<number>(widths.length);

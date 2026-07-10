@@ -7,17 +7,19 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
-import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import type { Column, CellEditContext, EditStatus, RowId } from "../core/types";
-import type { EditStore } from "../core/store/edit-store";
+
 import { cellViewportRect } from "../core/selection/geometry";
+import { FloatingTextEditor, NativeSelectEditor } from "./FloatingTextEditor";
+
+import type { CSSProperties, ReactNode } from "react";
 import type {
   Direction,
   GridGeometry,
   ViewportInfo,
 } from "../core/selection/geometry";
-import { FloatingTextEditor, NativeSelectEditor } from "./FloatingTextEditor";
+import type { EditStore } from "../core/store/edit-store";
+import type { CellEditContext, Column, EditStatus, RowId } from "../core/types";
 
 // Positioning is owned by the grid — these always win. (transform + visibility are written
 // imperatively in `place`, never via React, so they survive this leaf's scroll re-renders.)
@@ -140,7 +142,7 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
       const y = clamp(
         rect.y,
         rect.height,
-        Math.max(rect.height, view.clientHeight - rect.height),
+        Math.max(rect.height, view.clientHeight - rect.height)
       );
       // Horizontal clamp only matters for the center zone; frozen columns are pinned to their band.
       const x =
@@ -150,8 +152,8 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
               view.leftBand,
               Math.max(
                 view.leftBand,
-                view.clientWidth - view.rightTotal - rect.width,
-              ),
+                view.clientWidth - view.rightTotal - rect.width
+              )
             )
           : rect.x;
       host.style.visibility = "visible";
@@ -261,6 +263,6 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
     >
       {content}
     </div>,
-    document.body,
+    document.body
   );
 }

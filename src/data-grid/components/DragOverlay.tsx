@@ -1,7 +1,9 @@
 import { memo, useSyncExternalStore } from "react";
-import type { DragStore } from "../core/store/drag-store";
-import type { Zone } from "../core/selection/geometry";
+
 import { DROP_LINE_COLOR } from "../internal/constants";
+
+import type { Zone } from "../core/selection/geometry";
+import type { DragStore } from "../core/store/drag-store";
 
 // Draws the drop indicator in the source zone's header coordinate space.
 export const DragOverlay = memo(function DragOverlay(props: {

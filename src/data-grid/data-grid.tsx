@@ -1,5 +1,29 @@
 import { useEffect, useRef, useState } from "react";
+
+import { GridZone } from "./components/GridZone";
+import { RowGutter } from "./components/RowGutter";
+import { createDragStore } from "./core/store/drag-store";
+import { createEditStore } from "./core/store/edit-store";
+import { createGridStore } from "./core/store/grid-store";
+import { createPendingStore } from "./core/store/pending-store";
+import { createResizeStore } from "./core/store/resize-store";
+import { EditorPortal } from "./editors/EditorPortal";
+import { useCellEditing } from "./hooks/useCellEditing";
+import { useColumnDrag } from "./hooks/useColumnDrag";
+import { useColumnResize } from "./hooks/useColumnResize";
+import { useDragSelect } from "./hooks/useDragSelect";
+import { useGridGeometryHelpers } from "./hooks/useGridGeometryHelpers";
+import { useGridKeyboard } from "./hooks/useGridKeyboard";
+import { useGridLayout } from "./hooks/useGridLayout";
+import {
+  DEFAULT_OVERSCAN_COLS,
+  DEFAULT_OVERSCAN_ROWS,
+  DEFAULT_ROW_HEIGHT,
+} from "./internal/constants";
+import { composePointerGestures } from "./internal/pointer-gestures";
+
 import type { CSSProperties } from "react";
+import type { PlacedCol } from "./components/GridZone";
 import type {
   CellCommit,
   CellCommitFailure,
@@ -8,28 +32,6 @@ import type {
   GridSelection,
   RowId,
 } from "./core/types";
-import { createGridStore } from "./core/store/grid-store";
-import { createEditStore } from "./core/store/edit-store";
-import { createPendingStore } from "./core/store/pending-store";
-import { createDragStore } from "./core/store/drag-store";
-import { createResizeStore } from "./core/store/resize-store";
-import { EditorPortal } from "./editors/EditorPortal";
-import {
-  DEFAULT_ROW_HEIGHT,
-  DEFAULT_OVERSCAN_COLS,
-  DEFAULT_OVERSCAN_ROWS,
-} from "./internal/constants";
-import { composePointerGestures } from "./internal/pointer-gestures";
-import { GridZone } from "./components/GridZone";
-import type { PlacedCol } from "./components/GridZone";
-import { RowGutter } from "./components/RowGutter";
-import { useGridLayout } from "./hooks/useGridLayout";
-import { useGridGeometryHelpers } from "./hooks/useGridGeometryHelpers";
-import { useCellEditing } from "./hooks/useCellEditing";
-import { useGridKeyboard } from "./hooks/useGridKeyboard";
-import { useColumnDrag } from "./hooks/useColumnDrag";
-import { useColumnResize } from "./hooks/useColumnResize";
-import { useDragSelect } from "./hooks/useDragSelect";
 
 // DOM-rendered grid shell. Rows and center columns are virtualized; frozen zones use sticky
 // positioning. Selection and interaction overlays subscribe to external stores so pointer moves

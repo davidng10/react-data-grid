@@ -43,12 +43,12 @@ visible row. Cells are absolutely positioned with transforms inside their zone.
 
 Interactions convert between four coordinate spaces:
 
-| Space | Origin | Used by |
-| --- | --- | --- |
-| Viewport | Visible scroll box | Pointer events and sticky regions |
-| Scroll content | Full scrollable body | Conceptual grid layout |
-| Zone local | Start of one column zone | Cell and overlay transforms |
-| Cell address | `{ rowIndex, columnId }` | Selection, editing, and keyboard state |
+| Space          | Origin                   | Used by                                |
+| -------------- | ------------------------ | -------------------------------------- |
+| Viewport       | Visible scroll box       | Pointer events and sticky regions      |
+| Scroll content | Full scrollable body     | Conceptual grid layout                 |
+| Zone local     | Start of one column zone | Cell and overlay transforms            |
+| Cell address   | `{ rowIndex, columnId }` | Selection, editing, and keyboard state |
 
 The center zone includes `scrollLeft` when converting a viewport point to zone-local x. Frozen
 zones do not because they remain pinned. Vertical hit testing subtracts the sticky header before
@@ -61,13 +61,13 @@ inside gestures makes frozen-zone boundary bugs likely.
 
 Interaction state lives in small observable stores:
 
-| Store | Subscriber | Purpose |
-| --- | --- | --- |
-| Grid store | Selection overlays and row gutter | Focus, range, and selected rows |
-| Edit store | Editor portal | Active cell, draft, and validation error |
-| Pending store | Pending overlays | Optimistic values and commit failures |
-| Drag store | Drag overlays | Column source and drop indicator |
-| Resize store | Resize overlays | Active resize guide |
+| Store         | Subscriber                        | Purpose                                  |
+| ------------- | --------------------------------- | ---------------------------------------- |
+| Grid store    | Selection overlays and row gutter | Focus, range, and selected rows          |
+| Edit store    | Editor portal                     | Active cell, draft, and validation error |
+| Pending store | Pending overlays                  | Optimistic values and commit failures    |
+| Drag store    | Drag overlays                     | Column source and drop indicator         |
+| Resize store  | Resize overlays                   | Active resize guide                      |
 
 `DataGrid` mutates these stores but does not subscribe to them. This keeps pointer movement, draft
 changes, and overlay updates from re-rendering the windowed cells.
