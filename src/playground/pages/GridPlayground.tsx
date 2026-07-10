@@ -242,11 +242,11 @@ export function GridPlayground() {
           columnOrder={columnOrder}
           onColumnOrderChange={setColumnOrder}
           onCellCommit={onCellCommit}
-          // statsRef={statsRef}
+          statsRef={statsRef}
         />
       </div>
 
-      {/* <PerfOverlay getStats={() => statsRef.current} /> */}
+      <PerfOverlay getStats={() => statsRef.current} />
     </div>
   );
 }
