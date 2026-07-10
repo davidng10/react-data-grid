@@ -40,16 +40,21 @@ const HOST_POSITION: CSSProperties = {
 };
 
 // The default visual frame for the editor "panel". This is what the integrator restyles via
-// `editorClassName` / `editorStyle` (and the `data-editing` attribute, for plain CSS). The default
-// editors fill this frame transparently; a custom `renderEdit` should too (e.g. AntD `borderless`),
-// so every editor — default or custom — shares one grid-owned, consistently-styled panel.
+// `editorClassName` / `editorStyle` (and the `data-editing` / `data-invalid` attributes, for plain
+// CSS). The default editors fill this frame transparently; a custom `renderEdit` should too (e.g.
+// AntD `borderless`), so every editor — default or custom — shares one consistently-styled panel.
 const HOST_FRAME: CSSProperties = {
   zIndex: 1000,
-  border: "1px solid #2563eb",
   borderRadius: 4,
   background: "#fff",
   boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
 };
+
+// Synchronous validation keeps the editor open, so the same grid-owned frame becomes the error
+// indicator. Keep the complete border shorthand present in both states: adding/removing only the
+// `borderColor` longhand makes the browser fall back to `currentColor` (black) when the error clears.
+const HOST_EDITING_BORDER = "1px solid #2563eb";
+const HOST_ERROR_BORDER = "1px solid #dc2626";
 
 export interface EditorPortalProps<T> {
   editStore: EditStore;
@@ -65,7 +70,10 @@ export interface EditorPortalProps<T> {
   rowHeight: number;
   // Stable callbacks supplied by the shell (they read live props via refs).
   setDraft: (next: unknown) => void;
+  // EXPLICIT commit (the user actively saving from inside the editor) — exposed to editors as `ctx.commit`.
   commit: () => void;
+  // IMPLICIT commit (focus left the editor: blur / outside-click) — discards an invalid draft.
+  commitImplicit: () => void;
   cancel: () => void;
   commitAndMove: (dir: Direction) => void;
   // Styling for the floating editor panel (D7): merged onto / set on the host, over the default frame.
@@ -87,6 +95,7 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
     rowHeight,
     setDraft,
     commit,
+    commitImplicit,
     cancel,
     commitAndMove,
     editorClassName,
@@ -96,10 +105,11 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
   const edit = useSyncExternalStore(editStore.subscribe, editStore.getSnapshot);
   const cell = edit.status === "idle" ? null : edit.cell;
   const hostRef = useRef<HTMLDivElement | null>(null);
-  // Latest commit, read by the document listener below (props are fresh closures each render).
-  const commitRef = useRef(commit);
+  // Latest IMPLICIT commit, read by the outside-click listener below (props are fresh closures each
+  // render). Outside-click is a focus-leaving trigger, so it discards an invalid draft (not `commit`).
+  const commitImplicitRef = useRef(commitImplicit);
   useEffect(() => {
-    commitRef.current = commit;
+    commitImplicitRef.current = commitImplicit;
   });
 
   // Position (and reposition on scroll/resize) the floating host in viewport coords. Runs in a
@@ -179,17 +189,19 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
   }, [rowIndex, columnId, geom, gutterW, leftBand, rightTotal, scrollRef]);
 
   // Outside-click closes the editor (a GRID responsibility — D10): a pointerdown anywhere outside
-  // the floating host commits the active edit, so every editor (the default one OR a custom
-  // `renderEdit`) dismisses without each wiring its own blur. Capture phase, so it runs before the
-  // grid's own pointer handlers (which then re-select the clicked cell). Custom editors with their
-  // own popup MUST render it INSIDE the host (e.g. AntD `getPopupContainer`) so a click on the popup
-  // counts as "inside" and doesn't dismiss the editor.
+  // the floating host IMPLICITLY commits the active edit (focus is leaving), so every editor (the
+  // default one OR a custom `renderEdit`) dismisses without each wiring its own blur — and an
+  // invalid draft is discarded rather than trapping the user over a cell they've clicked away from.
+  // Capture phase, so it runs before the grid's own pointer handlers (which then re-select the
+  // clicked cell). Custom editors with their own popup MUST render it INSIDE the host (e.g. AntD
+  // `getPopupContainer`) so a click on the popup counts as "inside" and doesn't dismiss the editor.
   useEffect(() => {
     if (rowIndex == null || columnId == null) return;
     const onDown = (e: PointerEvent) => {
       const host = hostRef.current;
       const t = e.target;
-      if (host && t instanceof Node && !host.contains(t)) commitRef.current();
+      if (host && t instanceof Node && !host.contains(t))
+        commitImplicitRef.current();
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
@@ -205,6 +217,7 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
   const placement = geom.placement(cell.columnId);
   const width = placement?.width ?? 140;
   const status = edit.status as EditStatus;
+  const hasError = status === "error";
 
   const ctx: CellEditContext<T> = {
     row,
@@ -243,17 +256,25 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
         onEnter={() => commitAndMove("down")}
         onTab={() => commitAndMove("right")}
         onEscape={cancel}
+        onBlur={commitImplicit}
       />
     );
   }
 
   return createPortal(
-    // Frame (default) ← editorStyle (integrator override) ← position (grid-owned, always wins).
+    // Frame (default + validation state) ← editorStyle (integrator override) ← position
+    // (grid-owned, always wins). `data-invalid` lets a styled host supply its own error treatment.
     <div
       ref={hostRef}
       className={editorClassName}
-      style={{ ...HOST_FRAME, ...editorStyle, ...HOST_POSITION }}
+      style={{
+        ...HOST_FRAME,
+        border: hasError ? HOST_ERROR_BORDER : HOST_EDITING_BORDER,
+        ...editorStyle,
+        ...HOST_POSITION,
+      }}
       data-editing=""
+      data-invalid={hasError ? "" : undefined}
     >
       {content}
     </div>,

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type {
   CellCommit,
+  CellCommitFailure,
   Column,
   ColumnId,
   GridSelection,
@@ -84,13 +85,22 @@ export interface DataGridProps<T> {
   /**
    * Commit handler fallback when a column has no own `onCommit` (R4). Receives the parsed
    * `nextValue`; the consumer persists it and feeds it back as new `rows` (the grid never mutates
-   * row data). Return a promise to drive the editor's `submitting`/`error` states.
+   * row data). Runs only AFTER synchronous validation passes (`column.validate`). The returned
+   * promise drives the CELL's optimistic pending overlay (spinner → success-clear, or revert + red
+   * flash on rejection) — NOT the editor, which has already closed (D10). Validation, by contrast,
+   * is synchronous and gates the commit before the editor closes.
    */
   onCellCommit?: (update: CellCommit<T>) => Promise<void> | void;
   /**
+   * Called after an asynchronous cell commit rejects. The grid still performs its default rollback
+   * and temporary red flash; use this hook for application-level notifications or logging.
+   */
+  onCellCommitError?: (failure: CellCommitFailure<T>) => void;
+  /**
    * Style the floating editor panel — the grid-owned host that frames the active editor (D7). The
-   * host also carries `data-editing=""` for plain-CSS targeting. Overrides the default frame; the
-   * built-in editors and well-behaved custom `renderEdit`s render transparently to fill it.
+   * host also carries `data-editing=""` and, during synchronous validation errors,
+   * `data-invalid=""` for plain-CSS targeting. Overrides the default frame; the built-in editors
+   * and well-behaved custom `renderEdit`s render transparently to fill it.
    */
   editorClassName?: string;
   editorStyle?: CSSProperties;
@@ -113,6 +123,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     enableColumnResize = true,
     onColumnResize,
     onCellCommit,
+    onCellCommitError,
     editorClassName,
     editorStyle,
     statsRef,
@@ -207,7 +218,14 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   // DataGrid never SUBSCRIBES to the edit store; it only calls mutators. Only EditorPortal reads
   // it, so opening an editor / typing a draft / submit+error never re-render the windowed body.
 
-  const { beginEdit, cancelEdit, commitCell, commitAndMove } = useCellEditing({
+  const {
+    beginEdit,
+    setDraft,
+    cancelEdit,
+    commitCell,
+    commitImplicit,
+    commitAndMove,
+  } = useCellEditing({
     store,
     editStore,
     pendingStore,
@@ -217,6 +235,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     rowHeight,
     geom,
     onCellCommit,
+    onCellCommitError,
     scrollRef,
     scrollCellIntoView,
   });
@@ -394,8 +413,9 @@ export function DataGrid<T>(props: DataGridProps<T>) {
         leftBand={leftBand}
         rightTotal={right.total}
         rowHeight={rowHeight}
-        setDraft={editStore.setDraft}
+        setDraft={setDraft}
         commit={commitCell}
+        commitImplicit={commitImplicit}
         cancel={cancelEdit}
         commitAndMove={commitAndMove}
         editorClassName={editorClassName}

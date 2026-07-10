@@ -15,7 +15,7 @@ export type {
 export type { CellRange, GridSelection } from './selection'
 export { EMPTY_SELECTION } from './selection'
 
-export type { EditStatus, EditState, CellCommit } from './editing'
+export type { EditStatus, EditState, CellCommit, CellCommitFailure } from './editing'
 
 export type {
   GridSize,

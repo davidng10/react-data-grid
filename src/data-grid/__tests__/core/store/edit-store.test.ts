@@ -70,12 +70,26 @@ describe("editStore", () => {
     expect((snap as { error: Error }).error).toBeInstanceOf(Error);
   });
 
-  it("typing after an error clears the error back to editing (retry-by-typing)", () => {
+  it("typing after an error updates the draft while retaining the error", () => {
     const s = createEditStore();
     s.begin(CELL, "v");
     s.submitting();
     s.fail("nope");
     s.setDraft("v2");
+    expect(s.getSnapshot()).toEqual({
+      status: "error",
+      cell: CELL,
+      draft: "v2",
+      error: "nope",
+    });
+  });
+
+  it("clearError returns an errored draft to editing after corrective validation", () => {
+    const s = createEditStore();
+    s.begin(CELL, "v");
+    s.fail("nope");
+    s.setDraft("v2");
+    s.clearError();
     expect(s.getSnapshot()).toEqual({
       status: "editing",
       cell: CELL,

@@ -5,7 +5,7 @@
 
 import type { CSSProperties, ReactNode } from 'react'
 import type { Column } from './column'
-import type { CellCommit } from './editing'
+import type { CellCommit, CellCommitFailure } from './editing'
 import type { ColumnId, RowId } from './ids'
 import type { GridSelection } from './selection'
 
@@ -50,6 +50,7 @@ export interface GridProps<T> {
 
   // Editing (R4) — fallback when a column has no own onCommit.
   onCellCommit?: (update: CellCommit<T>) => Promise<void> | void
+  onCellCommitError?: (failure: CellCommitFailure<T>) => void
 
   // Column order (R3) — controlled; no internal order state.
   columnOrder?: ColumnId[]

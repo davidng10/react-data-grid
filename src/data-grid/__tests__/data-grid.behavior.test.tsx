@@ -171,8 +171,14 @@ describe('editing', () => {
   })
 
   it('a failed commit reverts (error path runs without crashing)', async () => {
-    const onCellCommit = vi.fn().mockRejectedValue(new Error('nope'))
-    const { scroller } = renderGrid({ columns: editableCols(), onCellCommit })
+    const error = new Error('nope')
+    const onCellCommit = vi.fn().mockRejectedValue(error)
+    const onCellCommitError = vi.fn()
+    const { scroller } = renderGrid({
+      columns: editableCols(),
+      onCellCommit,
+      onCellCommitError,
+    })
     click(scroller, 50, 48)
     click(scroller, 50, 48)
     const ta = screen.getByRole('textbox')
@@ -182,6 +188,40 @@ describe('editing', () => {
       await Promise.resolve()
     })
     await waitFor(() => expect(onCellCommit).toHaveBeenCalled())
+    expect(onCellCommitError).toHaveBeenCalledTimes(1)
+    expect(onCellCommitError).toHaveBeenCalledWith({
+      update: expect.objectContaining({
+        rowId: 0,
+        columnId: 'c0',
+        previousValue: 'r0',
+        nextValue: 'boom',
+      }),
+      error,
+    })
+  })
+
+  it('reports a synchronously thrown commit without skipping the built-in failure path', async () => {
+    const error = new Error('sync failure')
+    const onCellCommit = vi.fn(() => {
+      throw error
+    })
+    const onCellCommitError = vi.fn()
+    const { scroller } = renderGrid({
+      columns: editableCols(),
+      onCellCommit,
+      onCellCommitError,
+    })
+    click(scroller, 50, 48)
+    click(scroller, 50, 48)
+    const ta = screen.getByRole('textbox')
+    fireEvent.change(ta, { target: { value: 'boom' } })
+    fireEvent.keyDown(ta, { key: 'Enter' })
+
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(onCellCommitError).toHaveBeenCalledWith({
+      update: expect.objectContaining({ nextValue: 'boom' }),
+      error,
+    })
   })
 })
 
@@ -336,6 +376,189 @@ describe('editor variants', () => {
     await waitFor(() =>
       expect(onCellCommit).toHaveBeenCalledWith(expect.objectContaining({ nextValue: 'blurred' })),
     )
+  })
+})
+
+describe('cell validation', () => {
+  // A numeric column: the draft is parsed (string -> number) and validated to a [10, 100] range, so
+  // `validate` always receives the PARSED value. accessor returns a number so an untouched cell
+  // round-trips as a no-op (Number(50) === 50).
+  const numCols = (over: Partial<Column<Row>> = {}): Column<Row>[] => [
+    {
+      id: 'c0',
+      name: 'C0',
+      width: 100,
+      editable: true,
+      accessor: () => 50,
+      parseValue: (v) => Number(v),
+      validate: (v) =>
+        typeof v === 'number' && v >= 10 && v <= 100 ? null : 'Must be 10 to 100',
+      ...over,
+    },
+    { id: 'c1', name: 'C1', width: 100, accessor: (r) => r.v },
+    { id: 'c2', name: 'C2', width: 100, accessor: (r) => r.v },
+    { id: 'c3', name: 'C3', width: 100, accessor: (r) => r.v },
+  ]
+
+  // Open the editor on c0 r0 (click to focus, click again to edit) and return its textarea.
+  const openEditor = (scroller: HTMLElement) => {
+    click(scroller, 50, 48)
+    click(scroller, 50, 48)
+    return screen.getByRole('textbox') as HTMLTextAreaElement
+  }
+
+  it('explicit invalid (Enter) keeps the editor open, shows the error, does not commit', () => {
+    const onCellCommit = vi.fn().mockResolvedValue(undefined)
+    const { scroller } = renderGrid({ columns: numCols(), onCellCommit })
+    const ta = openEditor(scroller)
+    fireEvent.change(ta, { target: { value: '5' } }) // below the range
+    fireEvent.keyDown(ta, { key: 'Enter' })
+
+    expect(screen.getByRole('textbox')).toBeInTheDocument() // stayed open
+    expect(screen.getByRole('alert')).toHaveTextContent('Must be 10 to 100')
+    const editor = ta.closest('[data-editing]')
+    expect(editor).toHaveAttribute('data-invalid', '')
+    expect(editor).toHaveStyle({ borderColor: '#dc2626' })
+    expect(ta.style.borderStyle).toBe('none') // the panel owns the only outer frame
+    expect(onCellCommit).not.toHaveBeenCalled()
+  })
+
+  it('explicit valid (Enter) commits and moves down', async () => {
+    const onCellCommit = vi.fn().mockResolvedValue(undefined)
+    const onSel = vi.fn()
+    const { scroller } = renderGrid({
+      columns: numCols(),
+      onCellCommit,
+      onSelectionChange: onSel,
+    })
+    const ta = openEditor(scroller)
+    fireEvent.change(ta, { target: { value: '60' } })
+    fireEvent.keyDown(ta, { key: 'Enter' })
+
+    await waitFor(() =>
+      expect(onCellCommit).toHaveBeenCalledWith(
+        expect.objectContaining({ columnId: 'c0', nextValue: 60 }),
+      ),
+    )
+    expect(screen.queryByRole('textbox')).toBeNull() // closed
+    expect(lastSelection(onSel).focusedCell).toEqual({ rowIndex: 1, columnId: 'c0' }) // moved down
+  })
+
+  it('implicit invalid (blur) discards the draft and closes without committing', () => {
+    const onCellCommit = vi.fn().mockResolvedValue(undefined)
+    const { scroller } = renderGrid({ columns: numCols(), onCellCommit })
+    const ta = openEditor(scroller)
+    fireEvent.change(ta, { target: { value: '5' } })
+    fireEvent.blur(ta)
+
+    expect(screen.queryByRole('textbox')).toBeNull() // discarded + closed
+    expect(onCellCommit).not.toHaveBeenCalled()
+  })
+
+  it('implicit invalid (click another cell) discards the draft', () => {
+    const onCellCommit = vi.fn().mockResolvedValue(undefined)
+    const { scroller } = renderGrid({ columns: numCols(), onCellCommit })
+    const ta = openEditor(scroller)
+    fireEvent.change(ta, { target: { value: '5' } })
+    click(scroller, 150, 48) // c1 r0 — outside the editor host → outside-click commit (implicit)
+
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(onCellCommit).not.toHaveBeenCalled()
+  })
+
+  it('implicit valid (blur) commits', async () => {
+    const onCellCommit = vi.fn().mockResolvedValue(undefined)
+    const { scroller } = renderGrid({ columns: numCols(), onCellCommit })
+    const ta = openEditor(scroller)
+    fireEvent.change(ta, { target: { value: '42' } })
+    fireEvent.blur(ta)
+
+    await waitFor(() =>
+      expect(onCellCommit).toHaveBeenCalledWith(expect.objectContaining({ nextValue: 42 })),
+    )
+  })
+
+  it('keeps the error while typing and debounces corrective revalidation', async () => {
+    const validate = vi.fn((value: unknown): string | null =>
+      typeof value === 'number' && value >= 10 && value <= 100 ? null : 'Must be 10 to 100',
+    )
+    const { scroller } = renderGrid({ columns: numCols({ validate }) })
+    const ta = openEditor(scroller)
+    fireEvent.change(ta, { target: { value: '5' } })
+    fireEvent.keyDown(ta, { key: 'Enter' })
+    const alert = screen.getByRole('alert')
+    expect(validate).toHaveBeenCalledTimes(1)
+
+    fireEvent.change(ta, { target: { value: '6' } })
+    fireEvent.change(ta, { target: { value: '7' } })
+    expect(screen.getByRole('alert')).toBe(alert) // stable while typing; no red → blue flicker
+    expect(validate).toHaveBeenCalledTimes(1) // not called for every change event
+
+    await waitFor(() => expect(validate).toHaveBeenCalledTimes(2))
+    expect(validate).toHaveBeenLastCalledWith(7, expect.anything())
+    expect(screen.getByRole('alert')).toBe(alert) // latest draft is still invalid
+
+    fireEvent.change(ta, { target: { value: '60' } })
+    expect(screen.getByRole('alert')).toBe(alert) // remains red until validation actually accepts it
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    expect(validate).toHaveBeenCalledTimes(3)
+    expect(validate).toHaveBeenLastCalledWith(60, expect.anything())
+    const editor = ta.closest('[data-editing]')
+    expect(editor).not.toHaveAttribute('data-invalid')
+    expect(editor).toHaveStyle({ borderColor: '#2563eb' })
+    expect(screen.getByRole('textbox')).toBeInTheDocument() // still open, no longer errored
+  })
+
+  it('flushes corrective validation immediately on Enter', async () => {
+    const validate = vi.fn((value: unknown): string | null =>
+      typeof value === 'number' && value >= 10 && value <= 100 ? null : 'Must be 10 to 100',
+    )
+    const onCellCommit = vi.fn().mockResolvedValue(undefined)
+    const { scroller } = renderGrid({ columns: numCols({ validate }), onCellCommit })
+    const ta = openEditor(scroller)
+    fireEvent.change(ta, { target: { value: '5' } })
+    fireEvent.keyDown(ta, { key: 'Enter' })
+    expect(validate).toHaveBeenCalledTimes(1)
+
+    fireEvent.change(ta, { target: { value: '60' } })
+    expect(validate).toHaveBeenCalledTimes(1) // debounce has not fired
+    fireEvent.keyDown(ta, { key: 'Enter' })
+
+    expect(validate).toHaveBeenCalledTimes(2)
+    expect(validate).toHaveBeenLastCalledWith(60, expect.anything())
+    await waitFor(() =>
+      expect(onCellCommit).toHaveBeenCalledWith(expect.objectContaining({ nextValue: 60 })),
+    )
+    expect(screen.queryByRole('textbox')).toBeNull()
+  })
+
+  it('validate receives the PARSED value (after parseValue)', () => {
+    const validate = vi.fn((value: unknown): string | null =>
+      typeof value === 'number' ? null : 'not a number',
+    )
+    const { scroller } = renderGrid({ columns: numCols({ validate }) })
+    const ta = openEditor(scroller)
+    fireEvent.change(ta, { target: { value: '60' } })
+    fireEvent.keyDown(ta, { key: 'Enter' })
+
+    expect(validate).toHaveBeenCalledTimes(1)
+    const arg = validate.mock.calls[0][0]
+    expect(arg).toBe(60)
+    expect(typeof arg).toBe('number')
+  })
+
+  it('an unchanged value is a no-op close — validate is NOT called', () => {
+    const validate = vi.fn((value: unknown): string | null =>
+      typeof value === 'number' ? null : 'not a number',
+    )
+    const onCellCommit = vi.fn().mockResolvedValue(undefined)
+    const { scroller } = renderGrid({ columns: numCols({ validate }), onCellCommit })
+    openEditor(scroller) // draft starts as the current value (50); no edit
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+
+    expect(validate).not.toHaveBeenCalled()
+    expect(onCellCommit).not.toHaveBeenCalled()
+    expect(screen.queryByRole('textbox')).toBeNull() // closed as a no-op
   })
 })
 

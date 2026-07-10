@@ -109,10 +109,23 @@ export function GridPlayground() {
         if (c.id === TEXT_COL) {
           return {
             ...base,
-            name: "Note (text ✎)",
+            name: "Score 10–100 (text ✎)",
             editable: true,
+            // Resting values are numeric strings IN range, so the synchronous `validate` below only
+            // ever trips on a draft the user actually types — pre-existing data never traps them
+            // (validation runs only on a real change, against the parsed value).
             accessor: (row) =>
-              overrides.get(cellKey(row.id, TEXT_COL)) ?? c.accessor(row),
+              overrides.get(cellKey(row.id, TEXT_COL)) ??
+              String(10 + (row.id % 91)),
+            // Synchronous cell validation (D4): reject anything that isn't a number in [10, 100]. On
+            // an explicit save (Enter/Tab) the default editor stays open with a red border + this
+            // message; a click-away (blur / outside-click) discards the invalid draft instead.
+            validate: (v) => {
+              const n = Number(v);
+              return Number.isFinite(n) && n >= 10 && n <= 100
+                ? null
+                : "Must be a number from 10 to 100";
+            },
           };
         }
         if (c.id === SELECT_COL) {
@@ -200,7 +213,7 @@ export function GridPlayground() {
         </span>
         <span style={{ fontSize: 11, color: "#78716c" }}>
           drag a column header to reorder (within its frozen zone) · Enter/click
-          “Note” or “Word” to edit · Esc cancels
+          “Score” or “Word” to edit · “Score” must be 10–100 · Esc cancels
         </span>
       </header>
 
@@ -229,11 +242,11 @@ export function GridPlayground() {
           columnOrder={columnOrder}
           onColumnOrderChange={setColumnOrder}
           onCellCommit={onCellCommit}
-          statsRef={statsRef}
+          // statsRef={statsRef}
         />
       </div>
 
-      <PerfOverlay getStats={() => statsRef.current} />
+      {/* <PerfOverlay getStats={() => statsRef.current} /> */}
     </div>
   );
 }

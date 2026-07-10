@@ -336,7 +336,9 @@ windowed body. This keeps the D1/D6 contract intact through editing.
     not a 100k-row copy);
   - *error* → the entry flips to `error`, the cell **reverts to the old value and flashes red**
     (Web Animations fade over `ERROR_FLASH_MS`, single-sourced with the clear delay so the flash
-    can't "reappear"), then clears.
+    can't "reappear"), then clears. The optional `onCellCommitError` callback receives the original
+    commit payload and rejection for application-level notification or logging; it does not change
+    the built-in rollback/flash behavior.
   This is genuinely **multi-pending** (you can edit other cells while one is in flight) and keeps
   the body off the edit render path (only the overlay leaf subscribes). **On failure the typed draft
   is discarded** — the cell simply reverts. (We tried preserving it for restore-on-reopen, but
@@ -579,4 +581,3 @@ overlay + revert/flash on error), read/edit split (D4), grid-owned styleable edi
 `type: 'action'` columns inert (non-grabbable + drop-barriers). Verified in the playground.
 - **P8 — Expandable rows.** Sparse height override in the virtualizer (R1).
 - **P9 — Polish.** Custom-cell API, AntD portal fix (R7), perf write-up, a11y pass.
-

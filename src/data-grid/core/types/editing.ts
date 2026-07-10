@@ -25,3 +25,9 @@ export interface CellCommit<T> {
   previousValue: unknown
   nextValue: unknown
 }
+
+/** A rejected asynchronous cell commit, exposed so consumers can notify or log the failure. */
+export interface CellCommitFailure<T> {
+  update: CellCommit<T>
+  error: unknown
+}

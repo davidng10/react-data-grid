@@ -1,7 +1,9 @@
+import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import type {
   CellCoord,
   CellCommit,
+  CellCommitFailure,
   CellEditContext,
   Column,
   ColumnId,
@@ -15,11 +17,18 @@ import type { PendingStore } from "../core/store/pending-store";
 import { ERROR_FLASH_MS } from "../core/store/pending-store";
 import { DEFAULT_COL_WIDTH } from "../internal/constants";
 
+const CORRECTIVE_VALIDATION_DELAY_MS = 200;
+
 export interface CellEditingApi {
   /** Open the editor on a cell; `initialDraft` overrides the value (type-to-replace). */
   beginEdit: (cell: CellCoord, initialDraft?: unknown) => boolean;
+  /** Update the active draft; after a validation error, schedule corrective revalidation. */
+  setDraft: (next: unknown) => void;
   cancelEdit: () => void;
+  /** EXPLICIT commit — the user is actively saving from inside the editor (`ctx.commit`, select pick). */
   commitCell: () => void;
+  /** IMPLICIT commit — focus left the editor (blur / outside-click). Discards an invalid draft. */
+  commitImplicit: () => void;
   commitAndMove: (dir: Direction) => void;
 }
 
@@ -36,6 +45,7 @@ export function useCellEditing<T>(args: {
   rowHeight: number;
   geom: GridGeometry;
   onCellCommit?: (update: CellCommit<T>) => Promise<void> | void;
+  onCellCommitError?: (failure: CellCommitFailure<T>) => void;
   scrollRef: RefObject<HTMLDivElement | null>;
   scrollCellIntoView: (cell: CellCoord) => void;
 }): CellEditingApi {
@@ -49,12 +59,29 @@ export function useCellEditing<T>(args: {
     rowHeight,
     geom,
     onCellCommit,
+    onCellCommitError,
     scrollRef,
     scrollCellIntoView,
   } = args;
 
   const returnFocus = () => scrollRef.current?.focus();
   const findColumn = (id: ColumnId) => columns.find((c) => c.id === id);
+  const correctiveTimerRef = useRef<number | null>(null);
+  const correctiveValidationRef = useRef<() => void>(() => {});
+
+  const clearCorrectiveTimer = () => {
+    if (correctiveTimerRef.current == null) return;
+    window.clearTimeout(correctiveTimerRef.current);
+    correctiveTimerRef.current = null;
+  };
+
+  useEffect(
+    () => () => {
+      if (correctiveTimerRef.current != null)
+        window.clearTimeout(correctiveTimerRef.current);
+    },
+    [],
+  );
 
   const isEditable = (cell: CellCoord): boolean => {
     const col = findColumn(cell.columnId);
@@ -73,6 +100,7 @@ export function useCellEditing<T>(args: {
   // Open the editor on a cell. `initialDraft` overrides the current value (type-to-replace).
   // A cell mid-commit is "disabled" — refuse until its pending overlay resolves.
   const beginEdit = (cell: CellCoord, initialDraft?: unknown): boolean => {
+    clearCorrectiveTimer();
     const col = findColumn(cell.columnId);
     const row = rows[cell.rowIndex];
     if (!col || row == null || !isEditable(cell) || pendingStore.has(cell))
@@ -86,25 +114,12 @@ export function useCellEditing<T>(args: {
     return true;
   };
 
-  const cancelEdit = () => {
-    editStore.cancel(); // abandon — no commit
-    returnFocus();
-  };
-
-  // Commit the active edit OPTIMISTICALLY (D10): close the editor immediately, show the new value
-  // with a spinner via the pending overlay, and run the consumer's handler in the background.
-  // Parent stays authoritative (R4) — we never mutate `rows`. On success the persisted value flows
-  // back through `accessor` and the overlay clears; on failure the cell reverts to its old value
-  // and flashes red (the draft is discarded). The editor never lingers in a "submitting" state.
-  const startCommit = () => {
-    const snap = editStore.getSnapshot();
-    if (snap.status === "idle") return;
-    const { cell, draft } = snap;
-    editStore.succeed(); // close the editor NOW (hand off to the pending overlay)
-
+  // Resolve the consumer-facing context and parsed value in one place so commit-time validation
+  // and debounced corrective validation always evaluate the draft identically.
+  const resolveDraft = (cell: CellCoord, draft: unknown) => {
     const col = findColumn(cell.columnId);
     const row = rows[cell.rowIndex];
-    if (!col || row == null) return;
+    if (!col || row == null) return null;
 
     const rowId = getRowId(row, cell.rowIndex);
     const previousValue = col.accessor(row);
@@ -124,33 +139,137 @@ export function useCellEditing<T>(args: {
       height: rowHeight,
     };
     const nextValue = col.parseValue ? col.parseValue(draft, editCtx) : draft;
-    if (Object.is(nextValue, previousValue)) return; // nothing changed — no commit
-
-    const handler = col.onCommit ?? onCellCommit;
-    if (!handler) return; // nowhere to persist
-
-    pendingStore.setPending(cell, nextValue); // optimistic
-    Promise.resolve(
-      handler({ rowId, row, columnId: col.id, previousValue, nextValue }),
-    )
-      .then(() => pendingStore.clear(cell)) // persisted → value flows back, overlay clears
-      .catch(() => {
-        pendingStore.setError(cell); // revert + flash; the draft is discarded
-        window.setTimeout(() => pendingStore.clear(cell), ERROR_FLASH_MS);
-      });
+    return { cell, col, row, rowId, previousValue, editCtx, nextValue };
   };
 
-  const commitCell = () => {
-    startCommit();
+  // After the first explicit failure, revalidate only after typing pauses. The existing error stays
+  // mounted during the delay, avoiding false blue/valid feedback and repeated alert insertion.
+  const revalidateCorrectedDraft = () => {
+    correctiveTimerRef.current = null;
+    const snap = editStore.getSnapshot();
+    if (snap.status !== "error") return;
+    const resolved = resolveDraft(snap.cell, snap.draft);
+    if (!resolved) return;
+    const { col, nextValue, previousValue, editCtx } = resolved;
+    if (Object.is(nextValue, previousValue)) {
+      editStore.clearError();
+      return;
+    }
+    const error = col.validate?.(nextValue, editCtx);
+    if (error) editStore.fail(error);
+    else editStore.clearError();
+  };
+  // A pending timer always calls the latest render's resolver/props rather than a stale closure.
+  useEffect(() => {
+    correctiveValidationRef.current = revalidateCorrectedDraft;
+  });
+
+  const setDraft = (next: unknown) => {
+    const wasError = editStore.getSnapshot().status === "error";
+    editStore.setDraft(next);
+    if (!wasError) return; // initial typing remains validation-free
+    clearCorrectiveTimer();
+    correctiveTimerRef.current = window.setTimeout(
+      () => correctiveValidationRef.current(),
+      CORRECTIVE_VALIDATION_DELAY_MS,
+    );
+  };
+
+  const cancelEdit = () => {
+    clearCorrectiveTimer();
+    editStore.cancel(); // abandon — no commit
     returnFocus();
   };
 
+  // Validate, then commit the active edit OPTIMISTICALLY (D10). The synchronous `validate` gate runs
+  // BEFORE we close the editor, on every trigger, and branches on how the user is leaving the cell:
+  //   • `implicit` (blur / outside-click) + invalid → DISCARD (cancel) so a click-away never traps
+  //     the user or commits garbage — valid edits still save on blur (no spreadsheet regression);
+  //   • explicit (Enter / Tab / `ctx.commit`) + invalid → KEEP THE EDITOR OPEN via `editStore.fail`,
+  //     surfacing the message through `ctx.status === 'error'` / `ctx.error`.
+  // On accept it's the original optimistic path: close the editor immediately, show the new value
+  // with a spinner via the pending overlay, run the consumer's handler in the background. Parent
+  // stays authoritative (R4) — we never mutate `rows`. Returns true if the edit CLOSED (committed or
+  // a no-op close), false if it stayed open / was discarded — so callers know whether to move/focus.
+  const startCommit = (implicit: boolean): boolean => {
+    // Enter/Tab/blur never wait for the debounce: validate the latest draft immediately.
+    clearCorrectiveTimer();
+    const snap = editStore.getSnapshot();
+    if (snap.status === "idle") return false;
+    const { cell, draft } = snap;
+
+    const resolved = resolveDraft(cell, draft);
+    if (!resolved) {
+      editStore.succeed(); // can't resolve the cell — just close
+      return true;
+    }
+    const { col, row, rowId, previousValue, editCtx, nextValue } = resolved;
+    if (Object.is(nextValue, previousValue)) {
+      editStore.succeed(); // nothing changed — no-op close (validate is NOT consulted)
+      return true;
+    }
+
+    // Synchronous validation gate — only on a real change. A returned message REJECTS the commit.
+    const error = col.validate?.(nextValue, editCtx);
+    if (error) {
+      if (implicit)
+        editStore.cancel(); // click-away on an invalid draft → discard + close
+      else editStore.fail(error); // explicit save → keep the editor open + surface the error
+      return false;
+    }
+
+    editStore.succeed(); // accepted → close the editor NOW (hand off to the pending overlay)
+
+    const handler = col.onCommit ?? onCellCommit;
+    if (!handler) return true; // nowhere to persist
+
+    const update: CellCommit<T> = {
+      rowId,
+      row,
+      columnId: col.id,
+      previousValue,
+      nextValue,
+    };
+    const handleCommitError = (error: unknown) => {
+      // Preserve the built-in behavior first so a consumer callback cannot prevent rollback/flash.
+      pendingStore.setError(cell);
+      window.setTimeout(() => pendingStore.clear(cell), ERROR_FLASH_MS);
+      onCellCommitError?.({ update, error });
+    };
+
+    pendingStore.setPending(cell, nextValue); // optimistic
+    let result: Promise<void> | void;
+    try {
+      result = handler(update);
+    } catch (error) {
+      handleCommitError(error);
+      return true;
+    }
+    Promise.resolve(result)
+      .then(() => pendingStore.clear(cell)) // persisted → value flows back, overlay clears
+      .catch(handleCommitError); // revert + flash; the draft is discarded
+    return true;
+  };
+
+  // Explicit commit-in-place (`ctx.commit` / select pick). On a rejected validation the editor stays
+  // open and FOCUSED so the user can fix it — so only return focus to the grid when it actually closed.
+  const commitCell = () => {
+    if (startCommit(false)) returnFocus();
+  };
+
+  // Implicit commit (blur / outside-click). Valid → save + close; invalid → discard + close. Either
+  // way the editor is gone on success; don't return focus when it stayed open (it never does here).
+  const commitImplicit = () => {
+    if (startCommit(true)) returnFocus();
+  };
+
   // Commit (optimistically), then advance the focused cell — Enter→down, Tab→right. We do NOT wait
-  // for the async: the user moves on immediately; a later failure reverts + flashes that cell.
+  // for the async: the user moves on immediately; a later failure reverts + flashes that cell. A
+  // rejected validation keeps the editor open — DON'T move or return focus (the editor holds it).
   const commitAndMove = (dir: Direction) => {
     const snap = editStore.getSnapshot();
     const fromCell = snap.status === "idle" ? null : snap.cell;
-    startCommit();
+    if (!startCommit(false)) return; // invalid explicit save → stay open, don't move
     returnFocus();
     if (fromCell) {
       const next = stepCoord(fromCell, dir, geom);
@@ -159,5 +278,12 @@ export function useCellEditing<T>(args: {
     }
   };
 
-  return { beginEdit, cancelEdit, commitCell, commitAndMove };
+  return {
+    beginEdit,
+    setDraft,
+    cancelEdit,
+    commitCell,
+    commitImplicit,
+    commitAndMove,
+  };
 }

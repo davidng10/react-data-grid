@@ -7,15 +7,17 @@
 // body portal, so it escapes the grid's clip — R7).
 //
 // Async lifecycle is NOT shown here (D10): committing CLOSES the editor immediately and the
-// saving/error state is drawn on the cell by the grid's `PendingOverlay`. So these editors only
-// ever exist in the `editing` state — no submitting/error UI.
+// saving/error state is drawn on the cell by the grid's `PendingOverlay`. The one state these
+// editors DO surface is SYNCHRONOUS validation (D4): a `validate` rejection on an explicit save
+// keeps the editor open in the `error` state, which the portal draws as one red panel frame with an
+// inline message. Corrective edits retain that message until debounced revalidation accepts them.
 //
 // The visual "panel" (border/shadow/background) is the GRID's `EditorPortal` host (styleable via
 // `editorClassName`/`editorStyle`), NOT these editors — they render transparently to fill it, the
 // same contract a custom `renderEdit` follows. They consume a minimal `DefaultEditorApi` (the
 // relevant slice of `CellEditContext`) so they carry no row/column generic.
 
-import { useLayoutEffect, useRef } from 'react'
+import { useId, useLayoutEffect, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import type { EditStatus, SelectOption } from '../core/types'
 
@@ -31,7 +33,9 @@ export interface DefaultEditorApi {
 /**
  * The default floating text editor. Auto-grows to fit content (min = cell width/height, capped
  * width). Enter commits + moves down, Tab commits + moves right, Shift+Enter inserts a newline,
- * Escape cancels, blur commits in place.
+ * Escape cancels. `onBlur` is the IMPLICIT commit (focus left the editor): it saves a valid draft
+ * in place but DISCARDS an invalid one — distinct from the explicit Enter/Tab path, which keeps the
+ * editor open on a validation error.
  */
 export function FloatingTextEditor(props: {
   api: DefaultEditorApi
@@ -40,10 +44,14 @@ export function FloatingTextEditor(props: {
   onEnter: () => void
   onTab: () => void
   onEscape: () => void
+  onBlur: () => void
 }) {
   const { api, width, rowHeight } = props
   const ref = useRef<HTMLTextAreaElement | null>(null)
+  const errorId = useId()
   const value = api.draft == null ? '' : String(api.draft)
+  // A rejected `validate` on an explicit save (Enter/Tab) leaves the editor open in `error`.
+  const hasError = api.status === 'error'
 
   // Focus + select-all on open, so typing replaces the existing value (spreadsheet behavior).
   useLayoutEffect(() => {
@@ -75,32 +83,56 @@ export function FloatingTextEditor(props: {
     // Shift+Enter falls through → a newline (the textarea grows).
   }
 
-  // Bare textarea — transparent, borderless: it FILLS the grid-owned host panel (which provides the
-  // border/shadow/background). Min width = the cell; grows downward and a bit wider with content.
+  // Bare textarea — transparent and always borderless: it FILLS the grid-owned host panel, whose
+  // single frame changes from blue to red on a validation error. The message becomes a quiet footer
+  // in that panel; both states clear once the user types (`error` → `editing`).
+  const maxWidth = Math.max(width * 2, 360)
   return (
-    <textarea
-      ref={ref}
-      value={value}
-      rows={1}
-      spellCheck={false}
-      onChange={(e) => api.setDraft(e.target.value)}
-      onKeyDown={onKeyDown}
-      onBlur={() => api.commit()}
-      style={{
-        display: 'block',
-        minWidth: width,
-        maxWidth: Math.max(width * 2, 360),
-        boxSizing: 'border-box',
-        border: 'none',
-        outline: 'none',
-        resize: 'none',
-        padding: '5px 9px',
-        font: '13px/1.4 system-ui, sans-serif',
-        background: 'transparent',
-        color: '#1c1917',
-        overflow: 'hidden',
-      }}
-    />
+    <>
+      <textarea
+        ref={ref}
+        value={value}
+        rows={1}
+        spellCheck={false}
+        aria-invalid={hasError || undefined}
+        aria-describedby={hasError ? errorId : undefined}
+        onChange={(e) => api.setDraft(e.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={() => props.onBlur()}
+        style={{
+          display: 'block',
+          minWidth: width,
+          maxWidth,
+          boxSizing: 'border-box',
+          border: 'none',
+          outline: 'none',
+          resize: 'none',
+          padding: '5px 9px',
+          font: '13px/1.4 system-ui, sans-serif',
+          background: 'transparent',
+          color: '#1c1917',
+          overflow: 'hidden',
+        }}
+      />
+      {hasError && api.error != null && (
+        <div
+          id={errorId}
+          role="alert"
+          style={{
+            maxWidth,
+            boxSizing: 'border-box',
+            padding: '4px 9px 6px',
+            borderTop: '1px solid #fecaca',
+            borderRadius: '0 0 3px 3px',
+            font: '12px/1.4 system-ui, sans-serif',
+            color: '#dc2626',
+            background: '#fef2f2',
+          }}
+        >
+          {String(api.error)}
+        </div>
+      )}
+    </>
   )
 }
 

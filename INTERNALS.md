@@ -486,7 +486,8 @@ commit (Enter↓ / Tab→ / blur / select-pick) → editStore.succeed()  // edit
    parseValue; skip if unchanged; then →      pendingStore.setPending(cell, nextValue)  // optimistic
    handler = column.onCommit ?? props.onCellCommit  (fire-and-forget):
         resolve → pendingStore.clear(cell)            // persisted value flows back via accessor
-        reject  → pendingStore.setError(cell); setTimeout(clear, 2000)   // revert + red flash
+        reject  → pendingStore.setError(cell); onCellCommitError?.({ update, error });
+                  setTimeout(clear, ERROR_FLASH_MS)                       // revert + red flash
 cancel (Esc)                                → editStore.cancel()   // abandon, no commit
 ```
 

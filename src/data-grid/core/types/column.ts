@@ -88,6 +88,17 @@ export interface Column<T> {
   editable?: boolean | ((ctx: CellRenderContext<T>) => boolean)
   /** Coerce/validate the draft before commit (e.g. string -> number). */
   parseValue?: (next: unknown, ctx: CellEditContext<T>) => unknown
+  /**
+   * Synchronously validate the value before commit. Return an error message to REJECT the commit,
+   * or null/undefined to accept. Receives the value AFTER `parseValue` (i.e. what would actually be
+   * committed). Runs only when the value CHANGED — an unchanged cell commits as a no-op without
+   * validating, so opening/closing an already-invalid cell never traps the user. On an explicit
+   * save (Enter / Tab / `ctx.commit`) a rejection keeps the editor open and surfaces the message via
+   * `ctx.status === 'error'` / `ctx.error`; on an implicit one (blur / outside-click) the draft is
+   * discarded. After an explicit rejection, corrective edits are revalidated after a short pause;
+   * the error remains visible until the latest parsed draft passes. See DECISIONS.md D4.
+   */
+  validate?: (value: unknown, ctx: CellEditContext<T>) => string | null | undefined
   /** Per-column commit. Grid-level `onCellCommit` is the fallback (R4). */
   onCommit?: (update: CellCommit<T>) => Promise<void> | void
 
