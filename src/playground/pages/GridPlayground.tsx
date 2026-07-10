@@ -1,9 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button, Select } from "antd";
 
 import { DataGrid, cellKey } from "../../data-grid";
 import { ControlPanel } from "../ControlPanel";
-import { PerfOverlay } from "../PerfOverlay";
 import { STRESS, WORDS, makeColumns, makeRows } from "../fixtures";
 
 import type {
@@ -11,7 +10,6 @@ import type {
   CellKey,
   ColumnId,
   FrozenZone,
-  GridStats,
 } from "../../data-grid";
 import type { DemoColumn, DemoRow } from "../fixtures";
 
@@ -175,12 +173,6 @@ export function GridPlayground() {
     [baseColumns, freezeLeft, freezeRight, overrides]
   );
 
-  const statsRef = useRef<GridStats>({
-    rows: STRESS.rows,
-    cols: STRESS.cols,
-    renderedCells: 0,
-  });
-
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
       <header
@@ -237,11 +229,8 @@ export function GridPlayground() {
           columnOrder={columnOrder}
           onColumnOrderChange={setColumnOrder}
           onCellCommit={onCellCommit}
-          statsRef={statsRef}
         />
       </div>
-
-      <PerfOverlay getStats={() => statsRef.current} />
     </div>
   );
 }

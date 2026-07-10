@@ -84,7 +84,6 @@ export interface DataGridProps<T> {
   editorClassName?: string;
   editorStyle?: CSSProperties;
   /** Written during render so the perf meter can read counts without scroll-frequency setState. */
-  statsRef?: { current: GridStats };
 }
 
 export function DataGrid<T>(props: DataGridProps<T>) {
@@ -105,7 +104,6 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     onCellCommitError,
     editorClassName,
     editorStyle,
-    statsRef,
   } = props;
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -154,18 +152,6 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     vCols,
     totalHeight,
   } = layout;
-
-  // Update optional telemetry after render; the consumer polls without triggering grid state.
-  useEffect(() => {
-    if (!statsRef) return;
-    statsRef.current = {
-      rows: rows.length,
-      cols: columns.length,
-      // Center is windowed; the frozen zones are always fully rendered per visible row.
-      renderedCells:
-        vRows.length * (zones.left.length + vCols.length + zones.right.length),
-    };
-  });
 
   // Forward store changes without subscribing the windowed body through React state.
   useEffect(() => {
