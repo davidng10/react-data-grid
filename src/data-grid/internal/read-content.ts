@@ -1,9 +1,7 @@
 import type { ReactNode } from "react";
 import type { Column, RowId } from "../core/types";
 
-// Read-mode content for a body cell: a column's `renderRead` (D4) if present — where custom cell UI
-// like an actions button lives — else the value coerced to a truncated string (the cheap default for
-// the thousands of resting cells).
+// Custom renderers override the cheap string representation used by ordinary cells.
 export function readContent<T>(
   col: Column<T>,
   row: T,

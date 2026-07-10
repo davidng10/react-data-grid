@@ -1,14 +1,5 @@
-// Edit store (DECISIONS.md D1, D4, R4, R5).
-//
-// The second D1 plain-TS observable store (after grid-store): zero React imports, one immutable
-// `EditState` snapshot behind subscribe/getSnapshot (for `useSyncExternalStore`). Only the
-// `EditorPortal` leaf subscribes — `DataGrid` and the windowed body never do, so opening an
-// editor, typing a draft, and the submit/error transitions never re-render the body (D1/D6).
-//
-// This module is just the state container + intent mutators. The actual async commit (calling the
-// consumer's `onCommit` / `onCellCommit`) is orchestrated by the shell, which owns those props;
-// the store only tracks the resulting status. One active edit at a time (the chosen async model:
-// the editor stays open until the commit resolves) — so a single `EditState`, not a pending map.
+// Tracks one active editor. Only `EditorPortal` subscribes; asynchronous commit state moves to the
+// pending store after the editor closes.
 
 import type { CellCoord } from '../types/ids'
 import type { EditState } from '../types/editing'

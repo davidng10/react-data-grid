@@ -6,8 +6,7 @@ import type { EditStore } from "../core/store/edit-store";
 import { ARROW_DIR } from "../internal/layout";
 import type { GridLayout } from "./useGridLayout";
 
-// Keyboard navigation + edit triggers → the selection/edit stores (D1: never re-renders the body).
-// Reads store snapshots imperatively; never subscribes.
+// Handles keyboard navigation and edit triggers without subscribing the cell body to either store.
 export function useGridKeyboard<T>(args: {
   store: GridStore;
   editStore: EditStore;

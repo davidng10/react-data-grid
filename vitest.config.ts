@@ -1,6 +1,6 @@
 import { defineConfig } from "vitest/config";
 
-// Two projects so the headless core stays DOM-free (D1) while the React shell gets a real DOM:
+// Keep the plain TypeScript core DOM-free while running React tests in jsdom.
 //   • core — plain-TS engine (stores, geometry). Node env, no plugins, fast. `*.test.ts`.
 //   • dom  — DataGrid component / interaction tests in jsdom. `*.test.tsx`.
 // Split by extension so they never overlap. The app's `react()` plugin is intentionally NOT used

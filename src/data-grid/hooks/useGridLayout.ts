@@ -33,17 +33,14 @@ export interface GridLayout<T> {
   totalHeight: number;
 }
 
-// Pure layout/geometry derivation for the grid: applies the controlled column order, partitions
-// columns into the three frozen zones, computes per-zone offsets/widths, the placement map + visual
-// order, the geometry contract for overlays/navigation, and drives the row + center-column
-// virtualizers. No interaction state lives here — only memoized derivations of props (D5/D8).
+// Derives zone geometry and drives row and center-column virtualization. Interaction state does not
+// belong here.
 export function useGridLayout<T>(args: {
   columns: Column<T>[];
-  /** The controlled `columnOrder` prop (R3); undefined ⇒ source order. */
+  /** Controlled column order; source order is used when omitted. */
   columnOrder?: ColumnId[];
   /**
-   * In-session resize width overrides keyed by column id (D12), layered over each column's base
-   * `width` — the grid's internal uncontrolled map. Columns absent here fall back to `column.width`.
+   * In-session widths keyed by column id. Missing entries fall back to `column.width`.
    */
   widthOverrides?: Record<ColumnId, number>;
   rows: T[];
@@ -67,10 +64,7 @@ export function useGridLayout<T>(args: {
 
   const gutterW = enableRowSelection ? GUTTER_WIDTH : 0;
 
-  // Effective width per column (D12): the in-session resize override (`widthOverrides[id]`) layered
-  // over the column's base `width`, falling back to the default, then clamped to the static
-  // [minWidth, maxWidth] so an out-of-range value can never render. Stable per `widthOverrides` so
-  // the zone memos below only recompute when the override map changes (a resize commit) or columns do.
+  // Clamp all width sources so headers, cells, and overlays share the same geometry.
   const widthOf = useCallback(
     (c: Column<T>) =>
       clampNum(
@@ -81,10 +75,8 @@ export function useGridLayout<T>(args: {
     [widthOverrides],
   );
 
-  // Apply the controlled `columnOrder` (R3) before zoning: a stable sort by the id's position in
-  // the prop (unknown ids keep their original relative order, sorted to the end). `frozen` still
-  // drives zone assignment below, so this only orders columns WITHIN each zone — a malformed
-  // cross-zone order can't take effect (D5).
+  // Apply controlled order before zoning. A stable sort places unknown ids after listed ids while
+  // preserving their source order. Frozen state still controls zone membership.
   const ordered = useMemo(() => {
     if (!columnOrderProp) return columns;
     const pos = new Map(columnOrderProp.map((id, i) => [id, i]));
@@ -97,8 +89,7 @@ export function useGridLayout<T>(args: {
       .map((x) => x.c);
   }, [columns, columnOrderProp]);
 
-  // Partition columns into the three zones, preserving relative order within each. Cross-zone
-  // reorder is disallowed (D5), so grouping by `frozen` is the whole zoning model.
+  // Zone membership is defined only by `frozen`; drag reorder cannot move columns across zones.
   const zones = useMemo(() => {
     const left: Column<T>[] = [];
     const center: Column<T>[] = [];
@@ -158,7 +149,7 @@ export function useGridLayout<T>(args: {
     [rows.length, rowHeight, columnOrder, placementMap],
   );
 
-  // False positive lint noise, not using RC
+  // TanStack Virtual returns functions that the React compiler cannot safely memoize.
   // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: rows.length,

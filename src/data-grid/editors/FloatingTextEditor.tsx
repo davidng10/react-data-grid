@@ -1,21 +1,5 @@
-// Zero-dependency default editors (DECISIONS.md D4, D7, D10 — headless, no UI lib).
-//
-// The grid ships exactly these two built-ins so a `type: 'text' | 'select'` column is editable
-// with no external dependency; a column's own `renderEdit(ctx)` overrides them with anything
-// (AntD, etc.). The text editor is the Glide-style FLOATING, auto-expanding overlay: a `<textarea>`
-// that grows downward to fit the value and floats above the grid (it lives in `EditorPortal`'s
-// body portal, so it escapes the grid's clip — R7).
-//
-// Async lifecycle is NOT shown here (D10): committing CLOSES the editor immediately and the
-// saving/error state is drawn on the cell by the grid's `PendingOverlay`. The one state these
-// editors DO surface is SYNCHRONOUS validation (D4): a `validate` rejection on an explicit save
-// keeps the editor open in the `error` state, which the portal draws as one red panel frame with an
-// inline message. Corrective edits retain that message until debounced revalidation accepts them.
-//
-// The visual "panel" (border/shadow/background) is the GRID's `EditorPortal` host (styleable via
-// `editorClassName`/`editorStyle`), NOT these editors — they render transparently to fill it, the
-// same contract a custom `renderEdit` follows. They consume a minimal `DefaultEditorApi` (the
-// relevant slice of `CellEditContext`) so they carry no row/column generic.
+// Dependency-free text and select editors. They render transparently inside the grid-owned editor
+// host; pending and failed asynchronous commits are displayed by `PendingOverlay`.
 
 import { useId, useLayoutEffect, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
@@ -30,13 +14,7 @@ export interface DefaultEditorApi {
   error?: unknown
 }
 
-/**
- * The default floating text editor. Auto-grows to fit content (min = cell width/height, capped
- * width). Enter commits + moves down, Tab commits + moves right, Shift+Enter inserts a newline,
- * Escape cancels. `onBlur` is the IMPLICIT commit (focus left the editor): it saves a valid draft
- * in place but DISCARDS an invalid one — distinct from the explicit Enter/Tab path, which keeps the
- * editor open on a validation error.
- */
+/** Auto-growing text editor with spreadsheet-style Enter, Tab, and Escape behavior. */
 export function FloatingTextEditor(props: {
   api: DefaultEditorApi
   width: number

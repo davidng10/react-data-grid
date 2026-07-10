@@ -1,11 +1,5 @@
-// Selection store (DECISIONS.md D1, D6).
-//
-// The first real use of the D1 plain-TS observable store: zero React imports, one immutable
-// `GridSelection` snapshot behind subscribe/getSnapshot (for `useSyncExternalStore`). Only the
-// selection overlay and the row checkboxes subscribe — the windowed body never does, so
-// drag-select and focus moves never re-render cells (D6). All geometry/clamping lives in pure
-// functions (`../selection/geometry`); this module is just the state container + intent
-// mutators, each producing a fresh immutable snapshot so `Object.is` detects the change.
+// Plain TypeScript selection store. Only selection UI subscribes, keeping focus and drag updates
+// off the windowed cell body.
 
 import type { CellCoord, RowId } from '../types/ids'
 import type { CellRange, GridSelection } from '../types/selection'

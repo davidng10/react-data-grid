@@ -1,13 +1,5 @@
-// The async-commit overlay (DECISIONS.md D10, R4) — a sibling of `SelectionOverlay`.
-//
-// One memo'd leaf per zone, drawn inside that zone's container (so it scrolls/pins with the cells,
-// zone-local coords). It subscribes to the pending store and draws, for each in-flight/errored
-// commit in its zone:
-//   • pending → an opaque box covering the cell with the OPTIMISTIC value + a right-edge spinner
-//     (the cell looks "saving" and is non-editable; `DataGrid.beginEdit` refuses pending cells);
-//   • error   → a transparent red-bordered box that flashes then fades (ERROR_FLASH_MS), letting
-//     the reverted (old) value show through from the body cell beneath.
-// Only this leaf subscribes to the pending store; the windowed body never does (D1/D6).
+// Displays optimistic values and commit failures in zone-local coordinates. Only this overlay
+// subscribes to pending state.
 
 import { memo, useEffect, useRef, useSyncExternalStore } from "react";
 import type { CSSProperties } from "react";

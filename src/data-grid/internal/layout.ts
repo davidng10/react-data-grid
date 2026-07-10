@@ -9,9 +9,7 @@ export interface ZoneLayout {
   total: number;
 }
 
-// `widthOf` resolves each column's effective width (D12) — it lets the caller layer the grid's
-// internal (uncontrolled) resize override over the column's base `width`, plus the min/max clamp.
-// Defaults to the base width for any non-resize caller.
+// `widthOf` lets callers provide resolved widths; other callers use each column's base width.
 export function zoneLayout<T>(
   cols: Column<T>[],
   widthOf: (col: Column<T>) => number = (c) => c.width ?? DEFAULT_COL_WIDTH,

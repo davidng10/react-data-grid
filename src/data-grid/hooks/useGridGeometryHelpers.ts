@@ -12,7 +12,7 @@ export interface GridGeometryHelpers<T> {
     clientX: number,
     clientY: number,
   ) => { columnId: ColumnId; zone: Zone; sourceIndex: number } | null;
-  /** Map a header-strip point near a column's right boundary to that column's resize handle (D12). */
+  /** Map a point near a header's right edge to its resize handle. */
   headerResizeHitTest: (
     clientX: number,
     clientY: number,
@@ -105,10 +105,7 @@ export function useGridGeometryHelpers<T>(args: {
     return { rowIndex, columnId: col.id };
   };
 
-  // Map a viewport point in the HEADER strip to the header it's over (P7). Shares `resolveZone`'s
-  // banding AND `hitTest`'s `type: 'action'` exclusion: an action column is a pure UI affordance
-  // (D10), so the grid skips it for every interaction — drag-reorder included (grabbing a button
-  // column to sort it is meaningless).
+  // Action columns are excluded because their interactive content owns pointer input.
   const headerHitTest = (
     clientX: number,
     clientY: number,
@@ -128,10 +125,8 @@ export function useGridGeometryHelpers<T>(args: {
     return { columnId: col.id, zone: r.zone, sourceIndex: i };
   };
 
-  // Map a header-strip point to a column resize handle (D12): the pointer must be within
-  // RESIZE_HANDLE_WIDTH of a column's RIGHT boundary, and a boundary belongs to the column on its
-  // LEFT — that's the one a drag resizes. Shares `resolveZone`'s banding. `type: 'action'` /
-  // `resizable: false` columns are inert (no handle), exactly as they're inert for reorder.
+  // A resize boundary belongs to the column on its left. Action and non-resizable columns are
+  // excluded.
   const headerResizeHitTest = (clientX: number, clientY: number) => {
     const el = scrollRef.current;
     if (!el || columnOrder.length === 0) return null;
@@ -168,7 +163,7 @@ export function useGridGeometryHelpers<T>(args: {
     zone === "left" ? zones.left : zone === "right" ? zones.right : zones.center;
 
   // A clientX → zone-local x for `zone`, clamped to the zone so a pointer that wanders into another
-  // band pins to the source zone's nearest edge (this is what keeps reorder WITHIN-zone, D5).
+  // band pins to the source zone's nearest edge, keeping reorder within the zone.
   const zoneLocalXFor = (zone: Zone, clientX: number): number => {
     const el = scrollRef.current;
     if (!el) return 0;

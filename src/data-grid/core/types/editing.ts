@@ -1,7 +1,4 @@
-// Editing model (DECISIONS.md D4, R4, R5).
-//
-// Explicit state machine. Parent data stays authoritative (R4): the grid holds only the
-// draft / pending / error overlay, never a mutated copy of the user's rows.
+// Editor state machine. Parent rows remain authoritative; the grid keeps only transient edit state.
 
 import type { CellCoord, ColumnId, RowId } from './ids'
 
@@ -15,7 +12,7 @@ export type EditState =
 
 /**
  * Payload handed to `onCommit` / `onCellCommit`. The consumer applies `nextValue` to its own
- * data and lets it flow back in as new `rows` (R4). `previousValue` enables optimistic
+ * data and lets it flow back in as new `rows`. `previousValue` enables optimistic
  * rollback on rejection.
  */
 export interface CellCommit<T> {

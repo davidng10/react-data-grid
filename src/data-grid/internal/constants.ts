@@ -1,5 +1,4 @@
-// Shell layout/cosmetic constants (DECISIONS.md D5/D6/D7). The dumb shell hard-codes light styling;
-// the D7 theming surface is a later phase.
+// Shared layout and visual defaults for the grid shell.
 
 export const DEFAULT_ROW_HEIGHT = 32;
 export const DEFAULT_COL_WIDTH = 140;
@@ -22,7 +21,7 @@ export const SKELETON_BG = "#ffffff"; // base behind the bars (opaque)
 export const SKELETON_BAR = "#f5f5f4"; // the per-row placeholder bar
 export const SKELETON_PULSE_MS = 1000;
 
-// Selection overlay cosmetics (D6).
+// Selection overlay colors.
 export const SELECT_FILL = "rgba(37, 99, 235, 0.12)";
 export const SELECT_BORDER = "1px solid rgba(37, 99, 235, 0.55)";
 export const FOCUS_BORDER = "1px solid #2563eb";
@@ -31,14 +30,11 @@ export const FOCUS_BORDER = "1px solid #2563eb";
 export const EDGE_ZONE = 48;
 export const EDGE_SPEED = 22;
 
-// Column drag-reorder (P7). The pointer must move this far before a header press becomes a drag (so a
-// plain header click isn't swallowed). The drop indicator is a 2px line in the header strip.
+// Prevent a plain header click from being treated as a drag.
 export const DRAG_THRESHOLD = 4;
 export const DROP_LINE_COLOR = "#2563eb";
 
-// Column resize (P-resize / D12). The grab strip at each header's right edge (px on each side of the
-// boundary); the floor a column can be dragged down to; and the full-height guide line drawn while
-// resizing (a 2px line in zone-local coords, like the reorder drop indicator).
+// Resize hit area, minimum width, and guide color.
 export const RESIZE_HANDLE_WIDTH = 6;
 export const MIN_COL_WIDTH = 48;
 export const RESIZE_LINE_COLOR = "#2563eb";

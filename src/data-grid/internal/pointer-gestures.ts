@@ -1,17 +1,7 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 
-// One declarative gesture stack for the grid's scroll container. The shell layers several pointer
-// gestures on the SAME element — column-resize, column-reorder, cell drag-select — that are mutually
-// exclusive within a gesture and have a fixed priority (resize > reorder > select). Rather than
-// hand-repeat that priority inside every event handler (where one handler silently forgetting a
-// gesture is a real, shipped bug class — e.g. a lost-pointer-capture path that cleaned up two of the
-// three gestures), each gesture declares its handlers once and this composer derives the four
-// container handlers from the ordered list.
-//
-// `onPointerDown/Move/Up` return a "consumed" flag: the FIRST gesture in the list that returns truthy
-// wins the event and the rest are skipped (a gesture that returns void/undefined declines, so it can
-// sit last as the fallback). `onLostPointerCapture` has no priority — capture loss aborts whatever is
-// live, so EVERY gesture's cleanup runs.
+// Compose mutually exclusive gestures in priority order. The first handler to consume an event wins;
+// lost pointer capture runs every cleanup handler.
 
 type PointerHandler = (e: ReactPointerEvent<HTMLDivElement>) => boolean | void;
 
@@ -30,9 +20,7 @@ export interface PointerGestureHandlers {
 }
 
 /**
- * Compose an ordered list of {@link PointerGesture}s into the container's pointer handlers. Priority
- * is the array order — earliest first. Only the PRIMARY button (`button === 0`) starts a gesture, so
- * a right/middle click never enters the stack (it falls through to the native context menu/scroll).
+ * Compose ordered gestures into container handlers. Only the primary button starts a gesture.
  */
 export function composePointerGestures(
   gestures: PointerGesture[],

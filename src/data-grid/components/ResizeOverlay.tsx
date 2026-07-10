@@ -3,11 +3,7 @@ import type { ResizeStore } from "../core/store/resize-store";
 import type { Zone } from "../core/selection/geometry";
 import { RESIZE_LINE_COLOR } from "../internal/constants";
 
-// The guide line for a column resize (D12), one leaf per zone. Mounted INSIDE that zone's container
-// (spanning header + body), so it shares the cells' zone-local x and pins/scrolls with them — a
-// full-height line marking where the dragged right edge will land. Subscribes to the resize store,
-// so a resize drag re-renders only this leaf, never the body (D1/D6). A zone draws the line only
-// while ITS own column is the one being resized.
+// Draws the resize guide in the active zone's coordinate space.
 export const ResizeOverlay = memo(function ResizeOverlay(props: {
   zone: Zone;
   resizeStore: ResizeStore;

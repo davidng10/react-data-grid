@@ -21,10 +21,8 @@ export interface ColumnDragHandlers {
   onLostPointerCapture: () => void;
 }
 
-// Column drag-reorder gesture (P7): header press → threshold → within-zone reorder, with center-zone
-// edge auto-scroll. Owns the drag refs + the drag store updates; the windowed body never re-renders
-// (D1/D6). Each pointer handler returns a "consumed" flag so the shell can compose it ahead of the
-// cell drag-select (header-drag wins). Owns its own `pointerRef` — the two gestures never overlap.
+// Handles within-zone column dragging. Store updates redraw only the indicator, and each handler
+// reports whether it consumed the pointer event so gestures can be composed safely.
 export function useColumnDrag<T>(args: {
   reorderable: boolean;
   dragStore: DragStore;
@@ -38,11 +36,11 @@ export function useColumnDrag<T>(args: {
   const { headerHitTest, zoneColsFor, layoutFor, zoneLocalXFor } = helpers;
 
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
-  // Separate RAF for the column drag's edge auto-scroll (P7) — horizontal, center-zone only.
+  // Column drag uses its own horizontal auto-scroll loop.
   const dragScrollRef = useRef<number | null>(null);
   // The header captured on pointerdown; the drag only starts (and the drag store only flips to
   // `dragging`) once the pointer crosses `DRAG_THRESHOLD`. `bounds` is the insertion range the drag
-  // is confined to — it can't cross an `action` barrier column (D10).
+  // is confined to; it cannot cross an action-column barrier.
   const dragSourceRef = useRef<{
     columnId: ColumnId;
     zone: Zone;
@@ -50,12 +48,7 @@ export function useColumnDrag<T>(args: {
     bounds: [number, number];
   } | null>(null);
 
-  // Edge auto-scroll for a CENTER column drag (P7): while the pointer is held near the center band's
-  // left/right edge, ramp `scrollLeft` so off-screen columns flow in and become reachable in one
-  // gesture. Horizontal only; frozen zones never scroll (all their columns are rendered, D5). Each
-  // frame that scrolls also re-derives the drop target — the same pointer maps to a new column once
-  // `scrollLeft` moves — so the indicator tracks the columns flowing in. The drop stays clamped to
-  // the source's barrier `bounds`, so auto-scroll can't push a column past an `action` column.
+  // Recompute the target after each center-zone scroll because the pointer maps to a new column.
   const dragScrollTick = () => {
     const src = dragSourceRef.current;
     const el = scrollRef.current;
@@ -70,7 +63,7 @@ export function useColumnDrag<T>(args: {
       dragScrollRef.current = null;
       return;
     }
-    // Horizontal only — no `top` inset, so dy stays 0 (frozen zones are fully rendered, D5).
+    // Frozen zones are fully rendered and never need horizontal auto-scroll.
     const { dx } = edgeScrollDelta(pt, el, { left: leftBand, right: right.total });
     if (dx) {
       el.scrollLeft += dx;
@@ -96,13 +89,10 @@ export function useColumnDrag<T>(args: {
   );
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>): boolean => {
-    // Header press → a column drag candidate (P7). Capture the source and the origin, but don't
-    // start the drag store yet — wait for the pointer to cross DRAG_THRESHOLD so a plain header
-    // click isn't swallowed.
+    // Capture the source, but wait for the threshold before starting a drag.
     const header = reorderable ? headerHitTest(e.clientX, e.clientY) : null;
     if (!header) return false;
-    // Confine the drag so it can't be pushed past an `action` barrier column (D10). Constant for
-    // the gesture (source + zone are fixed), so compute it once here.
+    // Barrier bounds remain constant because the source and zone cannot change during a drag.
     const isBarrier = zoneColsFor(header.zone).map((c) => c.type === "action");
     const bounds = dragBounds(isBarrier, header.sourceIndex);
     dragSourceRef.current = { ...header, bounds };
@@ -117,7 +107,7 @@ export function useColumnDrag<T>(args: {
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>): boolean => {
     // Below threshold (and not yet dragging) we wait; once moved we start, then track the drop
-    // target. Clamped zone-local x keeps the indicator inside the source zone (D5).
+    // target. Clamped zone-local x keeps the indicator inside the source zone.
     const src = dragSourceRef.current;
     if (!src) return false;
     const origin = pointerRef.current?.x ?? e.clientX;
@@ -142,8 +132,7 @@ export function useColumnDrag<T>(args: {
         targetIndex: index,
         indicatorX,
       });
-      // A center drag can reach off-screen columns — start the edge auto-scroll (D5: frozen
-      // zones are fully rendered, so they never need it).
+      // Only center columns can reach off-screen targets.
       if (src.zone === "center" && dragScrollRef.current == null) {
         dragScrollRef.current = requestAnimationFrame(dragScrollTick);
       }

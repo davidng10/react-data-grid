@@ -32,9 +32,8 @@ export interface CellEditingApi {
   commitAndMove: (dir: Direction) => void;
 }
 
-// Editing triggers + optimistic commit orchestration (D4/R4/R5). DataGrid never SUBSCRIBES to the
-// edit store; this hook only calls mutators, so opening an editor / typing a draft / submit+error
-// never re-render the windowed body. Self-contained: it touches stores + props + scroll only.
+// Coordinates editing, validation, and optimistic commits. This hook mutates stores but does not
+// subscribe, keeping edit updates off the windowed cell body.
 export function useCellEditing<T>(args: {
   store: GridStore;
   editStore: EditStore;
@@ -134,7 +133,7 @@ export function useCellEditing<T>(args: {
       commit: () => {},
       cancel: () => {},
       status: "editing",
-      // Resolved current width (D12) — a column has no static width; placement carries the live one.
+      // Placement contains the current width after any in-session resize.
       width: geom.placement(cell.columnId)?.width ?? DEFAULT_COL_WIDTH,
       height: rowHeight,
     };
@@ -181,16 +180,9 @@ export function useCellEditing<T>(args: {
     returnFocus();
   };
 
-  // Validate, then commit the active edit OPTIMISTICALLY (D10). The synchronous `validate` gate runs
-  // BEFORE we close the editor, on every trigger, and branches on how the user is leaving the cell:
-  //   • `implicit` (blur / outside-click) + invalid → DISCARD (cancel) so a click-away never traps
-  //     the user or commits garbage — valid edits still save on blur (no spreadsheet regression);
-  //   • explicit (Enter / Tab / `ctx.commit`) + invalid → KEEP THE EDITOR OPEN via `editStore.fail`,
-  //     surfacing the message through `ctx.status === 'error'` / `ctx.error`.
-  // On accept it's the original optimistic path: close the editor immediately, show the new value
-  // with a spinner via the pending overlay, run the consumer's handler in the background. Parent
-  // stays authoritative (R4) — we never mutate `rows`. Returns true if the edit CLOSED (committed or
-  // a no-op close), false if it stayed open / was discarded — so callers know whether to move/focus.
+  // Explicit validation failures keep the editor open; implicit failures discard the draft so an
+  // outside click cannot trap focus. Accepted values move to the pending overlay while the consumer
+  // persists them. Returns whether the editor closed.
   const startCommit = (implicit: boolean): boolean => {
     // Enter/Tab/blur never wait for the debounce: validate the latest draft immediately.
     clearCorrectiveTimer();

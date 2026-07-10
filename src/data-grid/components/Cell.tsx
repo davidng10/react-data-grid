@@ -3,9 +3,7 @@ import type { ReactNode } from "react";
 import type { FrozenZone } from "../core/types";
 import { cellBase } from "../internal/style";
 
-// `content` is usually the value string (memo stays stable across scroll — D9). A column with a
-// custom `renderRead` passes a ReactNode instead; that breaks the memo for *those* cells only (a
-// fresh element each render), which is fine — custom-render columns are few, the bulk stay cheap.
+// Primitive content keeps memoization effective; custom renderers may pass a fresh React node.
 export const Cell = memo(function Cell(props: {
   content: ReactNode;
   x: number;

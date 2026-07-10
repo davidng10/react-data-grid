@@ -13,10 +13,8 @@ export interface DragSelectHandlers {
   onLostPointerCapture: () => void;
 }
 
-// Cell focus + drag-select gesture, with edge auto-scroll and click-to-edit disambiguation (D1/D6):
-// everything routes through the selection store, never the windowed body. Owns its own `pointerRef`
-// — the column-drag gesture never overlaps. Takes `beginEdit` from the editing hook to open the
-// editor on a clean click of the already-focused cell.
+// Handles cell focus, drag selection, edge auto-scroll, and click-to-edit. Updates go through the
+// selection store so pointer movement does not re-render cells.
 export function useDragSelect<T>(args: {
   store: GridStore;
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -33,10 +31,7 @@ export function useDragSelect<T>(args: {
   const lastHitRef = useRef<CellCoord | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const autoScrollRef = useRef<number | null>(null);
-  // Click-to-edit: a press on the ALREADY-focused cell opens its editor — but only on pointer-up
-  // and only if the pointer didn't drag (so a drag-select starting on the focused cell still
-  // selects a range, never edits). `pendingEditRef` holds that candidate cell; `movedRef` trips the
-  // moment the drag crosses into another cell.
+  // Open an already-focused cell only if the pointer never crosses into another cell.
   const pendingEditRef = useRef<CellCoord | null>(null);
   const movedRef = useRef(false);
 
@@ -55,15 +50,8 @@ export function useDragSelect<T>(args: {
     store.extendTo(cell);
   };
 
-  // While dragging near a viewport edge, ramp the scroll and keep extending the range. The center
-  // edges are inset by the gutter/frozen bands so auto-scroll triggers at the scrolling region's
-  // edge, not under the pinned columns.
-  //
-  // Gated on `movedRef` (a drag has actually crossed a cell): the pinned frozen zones SIT in the
-  // edge bands, so a plain click on a frozen cell is "past the edge" and would otherwise scroll the
-  // table every frame until pointer-up. Auto-scroll is a drag feature — a stationary click must not
-  // trigger it. (By the time a real drag reaches an edge it has already crossed cells, so this never
-  // blocks legitimate drag-auto-scroll.)
+  // Start edge auto-scroll only after crossing a cell. Without this guard, a stationary click in a
+  // frozen band would be mistaken for a pointer beyond the scrolling region.
   const autoScrollTick = () => {
     if (!draggingRef.current) {
       autoScrollRef.current = null;

@@ -31,22 +31,9 @@ import { useColumnDrag } from "./hooks/useColumnDrag";
 import { useColumnResize } from "./hooks/useColumnResize";
 import { useDragSelect } from "./hooks/useDragSelect";
 
-// The grid shell (DOM-rendered)
-//
-// Windowing via TanStack Virtual: one vertical row virtualizer (uniform height, D8) + one
-// horizontal column virtualizer that windows ONLY the center zone. Cells are absolutely
-// positioned with transform (D5) and memoized on primitive values (D9).
-//
-// Frozen zones (D5): columns split into three zones (left/center/right) laid out as a flex row;
-// left/right are `position: sticky` so they ride the body's compositor scroll (zero JS sync),
-// and each zone owns its own `sticky; top:0` header so the frozen corners pin on both axes. An
-// optional shell-owned checkbox gutter is a fourth sticky element pinned at the very left.
-//
-// Selection (D6): the focused cell + range live in a plain-TS store (D1), drawn as per-zone
-// OVERLAY rectangles — never as per-cell flags. Only the overlay leaves + the checkbox gutter
-// subscribe to the store (`useSyncExternalStore`); the windowed body never re-renders on
-// focus/drag, so a 1,000-column drag-select stays cheap. Pointer drag (with edge auto-scroll)
-// and keyboard nav route through the store + pure geometry.
+// DOM-rendered grid shell. Rows and center columns are virtualized; frozen zones use sticky
+// positioning. Selection and interaction overlays subscribe to external stores so pointer moves
+// do not re-render the windowed cells.
 
 export interface GridStats {
   rows: number;
@@ -61,34 +48,27 @@ export interface DataGridProps<T> {
   rowHeight?: number;
   overscanRows?: number;
   overscanCols?: number;
-  /** Show the shell-owned row-checkbox gutter, pinned at the far left (D6). */
+  /** Show the row-checkbox gutter pinned to the left edge. */
   enableRowSelection?: boolean;
-  /** Emitted on any selection change (D6). Full controlled mode (`selection` in) is a later phase. */
+  /** Called whenever the internal selection changes. */
   onSelectionChange?: (next: GridSelection) => void;
   /**
-   * Column order as a list of column ids (R3) — controlled; the grid holds NO internal order state.
-   * When supplied, columns render in this order (still grouped by their `frozen` zone — order only
-   * sorts WITHIN each zone). Drag-reorder requires this to be wired: omit it and a header drag fires
-   * `onColumnOrderChange` but nothing moves.
+   * Controlled column order. Columns remain grouped by frozen zone, so this only changes order
+   * within each zone.
    */
   columnOrder?: ColumnId[];
-  /** Emitted with the new full id order when a within-zone column drag-reorder completes (P7/D5). */
+  /** Called with the full column order after a within-zone drag. Enables column dragging. */
   onColumnOrderChange?: (order: ColumnId[]) => void;
   /**
-   * Column resize (D12) — **on by default**, UNCONTROLLED. `column.width` is the base/initial width;
-   * the grid owns in-session resizes internally, so resize just works with zero wiring. Set `false`
-   * to disable globally, or per-column `resizable: false`. (Controlled widths + reset are deferred.)
+   * Enable column resizing. Defaults to `true`; individual columns can opt out with
+   * `resizable: false`. The grid keeps resized widths for the current mount.
    */
   enableColumnResize?: boolean;
-  /** Fires on each resize commit with the new clamped width — wire it to persist (D12). */
+  /** Called after a resize with the clamped width. Use it to persist widths between mounts. */
   onColumnResize?: (columnId: ColumnId, width: number) => void;
   /**
-   * Commit handler fallback when a column has no own `onCommit` (R4). Receives the parsed
-   * `nextValue`; the consumer persists it and feeds it back as new `rows` (the grid never mutates
-   * row data). Runs only AFTER synchronous validation passes (`column.validate`). The returned
-   * promise drives the CELL's optimistic pending overlay (spinner → success-clear, or revert + red
-   * flash on rejection) — NOT the editor, which has already closed (D10). Validation, by contrast,
-   * is synchronous and gates the commit before the editor closes.
+   * Fallback commit handler for columns without `onCommit`. It receives the parsed value after
+   * synchronous validation passes. The consumer remains responsible for updating `rows`.
    */
   onCellCommit?: (update: CellCommit<T>) => Promise<void> | void;
   /**
@@ -97,10 +77,7 @@ export interface DataGridProps<T> {
    */
   onCellCommitError?: (failure: CellCommitFailure<T>) => void;
   /**
-   * Style the floating editor panel — the grid-owned host that frames the active editor (D7). The
-   * host also carries `data-editing=""` and, during synchronous validation errors,
-   * `data-invalid=""` for plain-CSS targeting. Overrides the default frame; the built-in editors
-   * and well-behaved custom `renderEdit`s render transparently to fill it.
+   * Style the floating editor host. It exposes `data-editing` and `data-invalid` state attributes.
    */
   editorClassName?: string;
   editorStyle?: CSSProperties;
@@ -136,15 +113,10 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   const [dragStore] = useState(() => createDragStore());
   const [resizeStore] = useState(() => createResizeStore());
 
-  // Drag-reorder is enabled only when the consumer can persist the result (it's controlled, R3): no
-  // handler ⇒ no drag, no grab cursor. Gates both the interaction and the header affordance.
+  // Reordering is controlled, so the callback also enables the drag gesture and affordance.
   const reorderable = !!onColumnOrderChange;
 
-  // Column resize (D12) — ON by default, UNCONTROLLED. `column.width` is the base/initial width; the
-  // grid owns in-session resizes in `internalWidths` (layered over `column.width`), so resize just
-  // works with zero wiring — one relayout per commit. `onColumnResize` fires for optional persistence
-  // (save it, reseed `column.width` on next mount). Controlled widths + reset (a `columnWidths` prop)
-  // are deferred — revisit when there's a concrete need.
+  // In-session width overrides are applied over each column's initial width.
   const resizeEnabled = enableColumnResize;
   const [internalWidths, setInternalWidths] = useState<
     Record<ColumnId, number>
@@ -154,7 +126,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     onColumnResize?.(columnId, width);
   };
 
-  // All pure layout/geometry derivation + the row/column virtualizers (D5/D8).
+  // Layout owns pure geometry derivation and both virtualizers.
   const layout = useGridLayout({
     columns,
     columnOrder: columnOrderProp,
@@ -181,9 +153,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     totalHeight,
   } = layout;
 
-  // Perf telemetry for the optional meter. Written in an effect (never during render — that would
-  // violate the no-ref-writes-during-render rule); the meter polls on its own RAF, so the one-frame
-  // lag is invisible. Runs after every render (vRows/vCols are fresh arrays) — cheap, no setState.
+  // Update optional telemetry after render; the consumer polls without triggering grid state.
   useEffect(() => {
     if (!statsRef) return;
     statsRef.current = {
@@ -195,14 +165,11 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     };
   });
 
-  // Emit selection changes to the consumer without ever re-rendering this component (the body):
-  // a plain store subscription, no setState.
+  // Forward store changes without subscribing the windowed body through React state.
   useEffect(() => {
     if (!onSelectionChange) return;
     return store.subscribe(() => onSelectionChange(store.getSnapshot()));
   }, [store, onSelectionChange]);
-
-  // --- pointer + keyboard → stores (D1: never touches the windowed body's render path) ---
 
   // Live-DOM geometry readers (hit-testing, per-zone layout, scroll-into-view) shared by the
   // interaction hooks below.
@@ -214,9 +181,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   });
   const { scrollCellIntoView } = helpers;
 
-  // --- editing (D4/R4/R5): triggers + commit orchestration → the edit store (→ EditorPortal) ---
-  // DataGrid never SUBSCRIBES to the edit store; it only calls mutators. Only EditorPortal reads
-  // it, so opening an editor / typing a draft / submit+error never re-render the windowed body.
+  // Only EditorPortal subscribes to edit state.
 
   const {
     beginEdit,
@@ -240,10 +205,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     scrollCellIntoView,
   });
 
-  // Column drag-reorder (P7) and cell drag-select (D6) are mutually exclusive within a gesture, so
-  // the shell composes them: header-drag gets first refusal on each pointer event (returns a
-  // "consumed" flag), and only when it declines does drag-select run. Each gesture owns its own
-  // refs internally — they never overlap.
+  // Column drag and cell selection are mutually exclusive; header drag gets first refusal.
   const colDrag = useColumnDrag({
     reorderable,
     dragStore,
@@ -252,9 +214,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     helpers,
     onColumnOrderChange,
   });
-  // Column resize (D12): a header-edge drag. Gets FIRST refusal in the pointer chain — its hot zone
-  // is a thin strip at the boundary, a subset of the header, so it must claim the gesture before the
-  // reorder grab (which owns the rest of the header) and the cell drag-select.
+  // Resize gets first refusal because its narrow hit area overlaps the header drag area.
   const colResize = useColumnResize({
     enabled: resizeEnabled,
     resizeStore,
@@ -271,9 +231,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     beginEdit,
   });
 
-  // Priority order, declared once: resize (thin boundary strip) → reorder (rest of the header) →
-  // drag-select (the body). The composer derives all four pointer handlers from this list, so the
-  // ordering — and every gesture's cleanup on capture loss — can't drift between event types.
+  // Earlier gestures get first refusal; all gestures clean up after lost pointer capture.
   const { onPointerDown, onPointerMove, onPointerUp, onLostPointerCapture } =
     composePointerGestures([colResize, colDrag, dragSel]);
 
@@ -288,10 +246,8 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   const rowIdAt = (index: number) => getRowId(rows[index], index);
   const getAllRowIds = () => rows.map((row, i) => getRowId(row, i));
 
-  // The windowing seam (D5): which columns each zone renders, and at what zone-local x/width. Both
-  // frozen zones render ALL their columns at their layout offsets; the center renders only the
-  // windowed `vCols`, with the center scroll margin folded into `x` here so GridZone never needs to
-  // know about scroll margins or virtualization. The same list drives a zone's header and body rows.
+  // Frozen zones render every column; the center list contains only virtualized columns. Folding the
+  // scroll margin into `x` keeps GridZone independent of virtualization.
   const leftPlaced: PlacedCol<T>[] = zones.left.map((col, i) => ({
     col,
     x: left.offsets[i],
@@ -308,8 +264,6 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     width: vc.size,
   }));
 
-  // Everything a GridZone needs that's identical across the three zones — bundled once so each zone
-  // only varies by `zone` / `placedCols` / `total`.
   const zoneProps = {
     gutterW,
     rowHeight,
@@ -327,12 +281,8 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     geom,
   };
 
-  // Single native scroll container. Inside it a flex row holds the gutter + three zones: the
-  // gutter and left/right zones are `position: sticky` so they ride the same compositor-driven
-  // scroll as the body (horizontal freeze with zero JS sync, mirroring the sticky header's
-  // vertical freeze). Flex places the right zone at the content's right edge, which is exactly
-  // where `sticky; right: 0` needs it. Each zone's header is a `sticky; top: 0` row, so the
-  // frozen corners pin on both axes.
+  // Flex places the right zone at the content edge required by `sticky; right: 0`. Sticky zones and
+  // headers then follow the native scroll without JavaScript synchronization.
   return (
     <>
       <div
@@ -400,7 +350,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
         </div>
       </div>
 
-      {/* The edit overlay — a body portal, so it escapes the scroll clip (R5/R7). Only this leaf
+      {/* The body portal escapes the scroll clip. Only this leaf
           subscribes to the edit store; the windowed body above never re-renders on edit. */}
       <EditorPortal
         editStore={editStore}

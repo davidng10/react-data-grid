@@ -53,7 +53,7 @@ describe("stepCoord", () => {
     ).toBe(9);
   });
 
-  it("toEdge jumps to the first/last row (R6)", () => {
+  it("toEdge jumps to the first/last row", () => {
     expect(
       stepCoord({ rowIndex: 5, columnId: "C1" }, "up", geom, true).rowIndex,
     ).toBe(0);
@@ -80,7 +80,7 @@ describe("stepCoord", () => {
     ).toBe("R0");
   });
 
-  it("toEdge jumps to the first/last column (R6)", () => {
+  it("toEdge jumps to the first/last column", () => {
     expect(
       stepCoord({ rowIndex: 0, columnId: "C1" }, "left", geom, true).columnId,
     ).toBe("L0");

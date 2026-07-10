@@ -19,23 +19,11 @@ import { SelectionOverlay } from "./SelectionOverlay";
 import { ResizeOverlay } from "./ResizeOverlay";
 import { PendingOverlay } from "../editors/PendingOverlay";
 
-/**
- * A column placed at a resolved x/width within its zone. This is the windowing seam: the parent
- * decides which columns render and where (frozen zones render ALL columns at their layout offsets;
- * the center renders only the windowed `vCols`, with the scroll margin already folded into `x`), so
- * GridZone itself stays windowing-agnostic — it never touches scroll margins or virtualization.
- */
+/** A rendered column with its resolved zone-local position. */
 export type PlacedCol<T> = { col: Column<T>; x: number; width: number };
 
-// One grid zone (left / center / right) — the body's repeated unit (D5). Renders its sticky header
-// strip (the frozen corner for left/right), the windowed body cells, and the per-zone selection /
-// pending / drag / resize overlays. The same `placedCols` list drives BOTH the header row and every
-// body row (placement is identical in both within a zone).
-//
-// A dumb render by design (D1/D6): it does NOT subscribe to any store — the overlays subscribe
-// internally, so interaction (focus/drag/resize/edit) re-renders only those leaves, never this
-// windowed body. Plain function component; the body is cheap to re-render on scroll (memoized
-// cells, D9), so no `memo` is warranted.
+// Renders one zone's header, cells, and interaction overlays. Only overlays subscribe to stores, so
+// interaction updates do not re-render this windowed body.
 export function GridZone<T>(props: {
   zone: Zone;
   placedCols: PlacedCol<T>[];

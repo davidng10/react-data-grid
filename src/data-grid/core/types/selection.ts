@@ -1,8 +1,4 @@
-// Selection model (DECISIONS.md D6).
-//
-// Three independent selections, any combination allowed. The range is stored as two
-// coordinates and drawn as overlay rectangles — never as a per-cell `selected` flag, so a
-// 1,000 x 100,000 selection stays a single object.
+// Cell focus, range selection, and checkbox row selection are independent.
 
 import type { CellCoord, RowId } from './ids'
 

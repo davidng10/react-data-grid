@@ -3,11 +3,7 @@ import type { DragStore } from "../core/store/drag-store";
 import type { Zone } from "../core/selection/geometry";
 import { DROP_LINE_COLOR } from "../internal/constants";
 
-// The drop-indicator for a column drag (P7), one leaf per zone. Mounted INSIDE that zone's sticky
-// header strip, so it shares the header cells' coordinate space (zone-local x) and pins/scrolls
-// with them. Subscribes to the drag store, so a header drag re-renders only this leaf, never the
-// body (D1/D6). Header-only line; reorder stays within the source zone (D5), so a zone only paints
-// the indicator while ITS own header is the drag source.
+// Draws the drop indicator in the source zone's header coordinate space.
 export const DragOverlay = memo(function DragOverlay(props: {
   zone: Zone;
   dragStore: DragStore;

@@ -1,4 +1,4 @@
-// Public type contract for the grid (Phase 1). See DECISIONS.md for the rationale behind each.
+// Public data-grid types.
 
 export type { RowId, ColumnId, CellCoord, CellKey } from './ids'
 export { cellKey } from './ids'

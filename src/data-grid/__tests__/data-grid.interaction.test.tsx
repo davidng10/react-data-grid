@@ -5,12 +5,7 @@ import { DataGrid } from '../data-grid'
 import type { DataGridProps } from '../data-grid'
 import type { Column, GridSelection } from '../core/types'
 
-// Characterization tests for the interaction hot paths (RAF auto-scroll, lost-pointer-capture
-// cleanup, click-vs-drag disambiguation, and the renderedCells stat). These pin behavior that the
-// upcoming hook extraction (useColumnDrag / useDragSelect / useGridLayout) splits across files, so
-// they exist to fail loudly if the split changes any observable behavior. Same jsdom box model as
-// data-grid.behavior.test.tsx: rect mocked to {left:0, top:0, 1000×600}; header strip y∈[0,32),
-// row r y∈[32+r*32, …), 100px columns → c_i x∈[i*100, …).
+// Interaction tests share a mocked 1000×600 box with a 32px header and 100px columns.
 
 interface Row {
   id: number
@@ -204,7 +199,7 @@ describe('column-drag auto-scroll + cleanup', () => {
   })
 })
 
-describe('column resize (D12)', () => {
+describe('column resize', () => {
   // c0..c3 are 100px → right-edge boundaries at x = 100/200/300/400; header strip is y ∈ [0, 32).
   // A press within RESIZE_HANDLE_WIDTH of a boundary grabs the column on its LEFT.
   it('a header right-edge drag commits the new width on release', () => {

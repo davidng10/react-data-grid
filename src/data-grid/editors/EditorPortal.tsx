@@ -1,17 +1,5 @@
-// The edit overlay (DECISIONS.md D1/D4/R5/R7) — the editing counterpart of `SelectionOverlay`.
-//
-// A single memo-free leaf that subscribes to the edit store and, while an edit is open, mounts the
-// active cell's editor in a `createPortal` to `document.body`. Two consequences of the portal:
-//   • R5 (editor survives the underlying cell virtualizing out) is free — the editor is NOT a body
-//     cell, so cell windowing can never unmount it.
-//   • R7 (escape the clip) is solved here — a body portal isn't clipped by the grid's
-//     `overflow`/transform, so the floating editor can grow past the cell and the grid edges.
-// The price: a body portal does NOT ride the grid's compositor scroll, so we reposition it
-// IMPERATIVELY on scroll/resize (writing `transform` on the host ref — never setState, so the
-// windowed body is never re-rendered, preserving the D1/D6 contract).
-//
-// `DataGrid` itself never subscribes to the edit store; only this leaf does. Draft keystrokes and
-// submit/error transitions re-render only this component.
+// Renders the active editor in a body portal so virtualization cannot unmount it and grid overflow
+// cannot clip it. The host is repositioned imperatively during scrolling to avoid cell re-renders.
 
 import {
   useEffect,
@@ -76,7 +64,7 @@ export interface EditorPortalProps<T> {
   commitImplicit: () => void;
   cancel: () => void;
   commitAndMove: (dir: Direction) => void;
-  // Styling for the floating editor panel (D7): merged onto / set on the host, over the default frame.
+  // Consumer styles are merged over the default editor frame.
   editorClassName?: string;
   editorStyle?: CSSProperties;
 }
@@ -188,13 +176,8 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
     };
   }, [rowIndex, columnId, geom, gutterW, leftBand, rightTotal, scrollRef]);
 
-  // Outside-click closes the editor (a GRID responsibility — D10): a pointerdown anywhere outside
-  // the floating host IMPLICITLY commits the active edit (focus is leaving), so every editor (the
-  // default one OR a custom `renderEdit`) dismisses without each wiring its own blur — and an
-  // invalid draft is discarded rather than trapping the user over a cell they've clicked away from.
-  // Capture phase, so it runs before the grid's own pointer handlers (which then re-select the
-  // clicked cell). Custom editors with their own popup MUST render it INSIDE the host (e.g. AntD
-  // `getPopupContainer`) so a click on the popup counts as "inside" and doesn't dismiss the editor.
+  // Capture outside clicks before grid selection. Custom editor popups must render inside this host
+  // or their clicks will implicitly commit the edit.
   useEffect(() => {
     if (rowIndex == null || columnId == null) return;
     const onDown = (e: PointerEvent) => {

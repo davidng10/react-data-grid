@@ -15,25 +15,15 @@ export interface ColumnResizeHandlers {
   onLostPointerCapture: () => void;
 }
 
-// Column resize gesture (P-resize / D12): header-edge press → drag → commit-on-release. The body
-// is NEVER on the per-move path — only the guide-line `ResizeOverlay` leaf re-renders while dragging
-// (D1/D6); the actual width change is emitted ONCE on pointerup via `onColumnResize`, then the
-// consumer feeds the new `column.width` back (one relayout). Each pointer handler returns a
-// "consumed" flag so the shell can compose it AHEAD of reorder + drag-select (the edge wins). Owns
-// its own ref — the gestures never overlap.
-//
-// Resize is single-column and commit-on-release, so there's no auto-scroll: the column's left edge
-// is fixed for the whole gesture, the new width is `clamp(startWidth + dx, min, max)`, and the
-// guide line sits at the prospective right edge (`colOffset + width`, zone-local). The same clamp
-// runs in `zoneLayout`, so the committed layout matches the guide.
+// Handles commit-on-release column resizing. Pointer moves update only the guide overlay; committing
+// once on release avoids repeatedly laying out the windowed cells.
 export function useColumnResize<T>(args: {
   /** Feature gate (`enableColumnResize`); off ⇒ no gesture, no handle. */
   enabled: boolean;
   resizeStore: ResizeStore;
   scrollRef: RefObject<HTMLDivElement | null>;
   helpers: GridGeometryHelpers<T>;
-  /** Called once on release with the committed (clamped) width. The shell applies it (uncontrolled
-   *  internal state and/or the controlled prop's `onColumnResize`). */
+  /** Called once on release with the committed, clamped width. */
   onCommit: (columnId: ColumnId, width: number) => void;
 }): ColumnResizeHandlers {
   const { enabled, resizeStore, scrollRef, helpers, onCommit } = args;

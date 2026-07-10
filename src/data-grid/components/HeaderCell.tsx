@@ -9,9 +9,9 @@ export const HeaderCell = memo(function HeaderCell(props: {
   width: number;
   height: number;
   frozen?: FrozenZone;
-  /** Show the grab affordance (column drag-reorder, P7). */
+  /** Show the column-drag affordance. */
   draggable?: boolean;
-  /** Show the col-resize handle at the right edge (D12). */
+  /** Show the resize handle at the right edge. */
   resizable?: boolean;
 }) {
   const { name, x, width, height, frozen, draggable, resizable } = props;

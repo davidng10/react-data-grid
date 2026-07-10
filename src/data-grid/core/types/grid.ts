@@ -1,7 +1,4 @@
-// Public grid props (DECISIONS.md D7, D8, R2, R3, R4).
-//
-// This is the top-level contract a consumer passes. Selection and column order are optionally
-// controlled: omit the value + handler for uncontrolled behavior, or supply both to control.
+// Additional grid contracts.
 
 import type { CSSProperties, ReactNode } from 'react'
 import type { Column } from './column'
@@ -9,12 +6,12 @@ import type { CellCommit, CellCommitFailure } from './editing'
 import type { ColumnId, RowId } from './ids'
 import type { GridSelection } from './selection'
 
-/** Sizing (R2). Fluid fills the parent (ResizeObserver); fixed is explicit px. */
+/** Fluid fills the parent; fixed uses explicit pixel dimensions. */
 export type GridSize =
   | { mode: 'fluid' }
   | { mode: 'fixed'; width: number; height: number }
 
-/** Per-part className hooks for the headless shell (D7). Each part also emits data-* states. */
+/** Class-name hooks for grid parts. */
 export interface GridClassNames {
   root?: string
   header?: string
@@ -30,39 +27,37 @@ export interface ExpandedRowContext<T> {
 }
 
 export interface GridProps<T> {
-  // Data (D3).
+  // Data
   rows: T[]
   columns: Column<T>[]
   getRowId: (row: T, index: number) => RowId
 
-  // Layout (D8 / R2).
-  /** Uniform base row height in px (D8). */
+  // Layout
+  /** Uniform row height in pixels. */
   rowHeight?: number
   size?: GridSize
 
-  // Expandable rows (R1). Separate entity from base rows; fixed height for now.
+  // Expanded rows
   expandedRowHeight?: number
   renderExpanded?: (ctx: ExpandedRowContext<T>) => ReactNode
 
-  // Selection (D6) — optionally controlled.
+  // Selection
   selection?: GridSelection
   onSelectionChange?: (next: GridSelection) => void
 
-  // Editing (R4) — fallback when a column has no own onCommit.
+  // Editing
   onCellCommit?: (update: CellCommit<T>) => Promise<void> | void
   onCellCommitError?: (failure: CellCommitFailure<T>) => void
 
-  // Column order (R3) — controlled; no internal order state.
+  // Controlled column order
   columnOrder?: ColumnId[]
   onColumnOrderChange?: (order: ColumnId[]) => void
 
-  // Column resize (D12) — on by default, UNCONTROLLED: `column.width` is the base/initial width and
-  // the grid owns in-session resizes, so resize works with no wiring. `onColumnResize` fires for
-  // optional persistence. Controlled widths + reset (a `columnWidths` prop) are deferred.
+  // Column resize
   enableColumnResize?: boolean
   onColumnResize?: (columnId: ColumnId, width: number) => void
 
-  // Styling (D7).
+  // Styling
   className?: string
   style?: CSSProperties
   classNames?: GridClassNames

@@ -1,15 +1,5 @@
-// Pending-commit store (DECISIONS.md D10, R4) — the optimistic async overlay.
-//
-// The third D1 plain-TS store. When a cell is committed, the editor closes IMMEDIATELY and the
-// async lifecycle moves here: an in-flight commit shows the optimistic value with a spinner; a
-// failed one flashes red and reverts. Keyed by the cell's display coord (`rowIndex:columnId`,
-// matching how the selection store addresses cells) so the per-zone `PendingOverlay` can position
-// each entry with `cellToZoneRect` — no rowId→index lookup. Persistence still uses the stable
-// RowId in the `CellCommit` payload (captured at commit time); this store is display-only and
-// transient (parent data stays authoritative — R4).
-//
-// Only `PendingOverlay` subscribes; `DataGrid`/the body never do. Commits are rare discrete events,
-// so a per-commit overlay re-render is off the scroll/drag/keystroke hot path (D1/D6 preserved).
+// Tracks optimistic values and failures by display coordinate. The store is transient; parent rows
+// remain authoritative, and only `PendingOverlay` subscribes.
 
 import type { CellCoord } from '../types/ids'
 

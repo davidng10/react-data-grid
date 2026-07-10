@@ -1,13 +1,4 @@
-// Selection geometry (DECISIONS.md D6, D8) — pure, DOM-free, unit-tested.
-//
-// Two jobs, both pure arithmetic:
-//   1. `stepCoord` — keyboard navigation: move/clamp the focused cell, with `toEdge` for the
-//      Cmd/Ctrl+arrow jump-to-edge semantics (R6).
-//   2. `rangeToZoneRects` / `cellToZoneRect` — turn a CellRange (or a single cell) into the
-//      overlay rectangles that draw it: up to one rectangle per zone the range spans (D5), each
-//      in that zone's LOCAL coordinate space (the same coords the cells use, so the overlay
-//      lines up without knowing about scroll). Vertical extent is `rowIndex * rowHeight` thanks
-//      to uniform row height (D8) — no prefix-sum needed for rows.
+// Pure geometry for keyboard navigation, selection overlays, and column reordering.
 
 import type { CellCoord, ColumnId } from '../types/ids'
 import type { CellRange } from '../types/selection'
@@ -49,7 +40,7 @@ const ZONE_ORDER: Zone[] = ['left', 'center', 'right']
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
 
-/** Next focused cell after an arrow key. `toEdge` = Cmd/Ctrl+arrow jump to the grid edge (R6). */
+/** Next focused cell after an arrow key. `toEdge` jumps to the grid edge. */
 export function stepCoord(
   focus: CellCoord,
   dir: Direction,
@@ -85,8 +76,7 @@ export function stepCoord(
     return -1
   }
 
-  // Normal: first selectable from base±1 in the step direction. toEdge (R6): jump to the far edge,
-  // then inward to the nearest selectable. If none in that direction, stay put.
+  // Normal movement selects the next eligible column; `toEdge` starts from the far edge.
   let target = toEdge ? scanFrom(step > 0 ? lastCol : 0, -step) : scanFrom(base + step, step)
   if (target < 0) target = base
   return { rowIndex: focus.rowIndex, columnId: geom.columnOrder[clamp(target, 0, lastCol)] }
@@ -172,13 +162,7 @@ export interface ViewportRect {
   visible: boolean
 }
 
-/**
- * The cell's rectangle in VIEWPORT coordinates — unlike `cellToZoneRect` (zone-local, rides the
- * compositor scroll), this is what a `position: fixed` portal editor needs: a screen position it
- * must recompute on scroll, since a body portal does NOT ride the grid's internal scroll (§4 of
- * INTERNALS, run forwards). The crux: only the center zone carries a `scrollLeft` term; the
- * pinned (frozen) zones do not.
- */
+/** Return a cell's viewport rectangle for fixed-position overlays. Only the center zone scrolls. */
 export function cellViewportRect(
   cell: CellCoord,
   geom: GridGeometry,
@@ -212,19 +196,9 @@ export function cellViewportRect(
   return { x, y, width, height, visible }
 }
 
-// --- Column drag-reorder (DECISIONS.md D5, R3 — Phase 7). Pure, within-zone only. ---
+// Column drag-reorder geometry
 
-/**
- * Drop target for a within-zone column drag. Given a zone's column `offsets`/`widths` (which cover
- * ALL of the zone's columns — built from the full zone column list, not the virtualizer window, so
- * off-screen center targets resolve) and a zone-local pointer `x`, returns:
- *   • `index`      — the insertion index `0..n` (the pointer inserts AFTER a column once it passes
- *                    that column's midpoint);
- *   • `indicatorX` — the zone-local x of the drop-indicator line (the column boundary at `index`).
- * Optional `bounds` clamps the insertion index to `[lo, hi]` — used to keep a drag from crossing an
- * immovable barrier column (see `dragBounds`); the indicator then pins at the barrier's edge.
- * An empty zone yields `{ index: 0, indicatorX: 0 }`.
- */
+/** Resolve a zone-local pointer x to a bounded insertion index and indicator position. */
 export function dropIndexAtX(
   offsets: number[],
   widths: number[],
@@ -239,13 +213,7 @@ export function dropIndexAtX(
   return { index, indicatorX }
 }
 
-/**
- * The insertion-index range `[lo, hi]` a dragged column may land in when some columns in its zone
- * are immovable barriers (`type: 'action'`, D10). The source can reorder only within the run
- * between the nearest barrier on each side, so a draggable column can never be pushed PAST an action
- * column. `isBarrier[k]` marks the k-th zone column as a barrier; `sourceIndex` is the dragged
- * column's local index (never itself a barrier — those can't be grabbed).
- */
+/** Return the insertion range bounded by the nearest action columns. */
 export function dragBounds(isBarrier: boolean[], sourceIndex: number): [number, number] {
   let lo = 0
   for (let k = sourceIndex - 1; k >= 0; k--) {
@@ -264,14 +232,7 @@ export function dragBounds(isBarrier: boolean[], sourceIndex: number): [number, 
   return [lo, hi]
 }
 
-/**
- * The new full column order after dragging `fromId` to insertion index `toIndex` WITHIN its own
- * zone. Only the source zone's slice of `columnOrder` is permuted — `zoneOf` identifies the zone of
- * each id, and a column never leaves its zone (cross-zone drag is out, D5). `toIndex` is an
- * insertion index in the zone's *original* slice (0..n); the splice-after-remove correction is
- * applied internally. Returns the SAME array reference on a no-op (drop onto self), so callers can
- * skip firing `onColumnOrderChange`.
- */
+/** Reorder one zone and return the original array for a no-op. */
 export function reorderWithinZone(
   columnOrder: ColumnId[],
   fromId: ColumnId,

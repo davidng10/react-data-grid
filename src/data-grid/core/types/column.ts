@@ -1,23 +1,13 @@
-// Column schema & cell contract (DECISIONS.md D3, D4, D5, D7).
-//
-// React note: the only `react` imports here are TYPES (`ReactNode`, `CSSProperties`) — erased
-// at compile time, so they don't violate D1's "no React runtime in the core". The pure
-// state/geometry modules (P2+) import no React at all.
+// Column schema and rendering contract. React imports are type-only.
 
 import type { CSSProperties, ReactNode } from 'react'
 import type { CellCommit, EditStatus } from './editing'
 import type { ColumnId, RowId } from './ids'
 
-/**
- * Built-in cell kinds. Undefined => text (value coerced to string).
- * - `text` / `select` pick the default editor.
- * - `action` marks a non-data column (e.g. a row-action button via `renderRead`): its cells are
- *   NON-selectable (pointer + keyboard skip them) and non-editable, so interactive content inside
- *   handles its own clicks without the consumer wiring stopPropagation/preventDefault.
- */
+/** Built-in editor kind. Action cells are non-selectable and own their pointer input. */
 export type CellType = 'text' | 'select' | 'action'
 
-/** Frozen zone (D5). Omit => center (horizontally scrolling) zone. */
+/** Frozen zone. Omit for the horizontally scrolling center zone. */
 export type FrozenZone = 'left' | 'right'
 
 export interface SelectOption {
@@ -31,11 +21,11 @@ export interface CellRenderContext<T> {
   rowId: RowId
   rowIndex: number
   column: Column<T>
-  /** Result of `column.accessor(row)` (D3). */
+  /** Result of `column.accessor(row)`. */
   value: unknown
 }
 
-/** Context passed to the edit-mode hook (D4). The editor owns its input; the grid owns commit. */
+/** Edit context. The editor owns input state; the grid owns commit behavior. */
 export interface CellEditContext<T> extends CellRenderContext<T> {
   draft: unknown
   setDraft: (next: unknown) => void
@@ -48,68 +38,48 @@ export interface CellEditContext<T> extends CellRenderContext<T> {
   height: number
 }
 
-/**
- * A column definition over row objects of type `T`.
- *
- * Cell render contract (D4) — three read states + edit:
- *   renderRead     cheap static markup for the resting cell (ellipsis-truncated)
- *   renderOverflow content shown in the click-popover when the cell overflows (defaults to
- *                  the full value); set `overflow: false` to disable the popover affordance
- *   renderEdit     the heavy editor (e.g. AntD), mounted ONLY for the active cell
- *
- * Styling (D7) — `className`/`style` accept a value or a function of cell context; the shell
- * additionally emits `data-*` state attributes (data-selected, data-editing, data-frozen,
- * data-overflow) for plain-CSS targeting.
- */
+/** Defines how the grid reads, edits, and lays out a field from row type `T`. */
 export interface Column<T> {
   id: ColumnId
   name: string
 
-  /** Push-model value access (D3). */
+  /** Read this column's value from a row. */
   accessor: (row: T) => unknown
 
-  // Layout (D5 / D12). `width` is the column's CURRENT width, consumer-controlled via the columns
-  // array — the grid holds no width state; a resize emits `onColumnResize` and the consumer feeds
-  // the new width back here (and persists it). Effective width = clamp(width ?? default, minWidth,
-  // maxWidth), so the constraints below always hold. minWidth === maxWidth pins a column to a fixed
-  // width (no resize travel). Width undefined => DEFAULT_COL_WIDTH.
+  // Layout. `width` is the initial width; the grid layers in-session resizes over it. All widths are
+  // clamped to `minWidth` and `maxWidth`.
   width?: number
   /** Resize floor in px. Default MIN_COL_WIDTH. */
   minWidth?: number
   /** Resize ceiling in px. Default unbounded. */
   maxWidth?: number
-  /** Opt out of column resizing (D12). Default true; `type: 'action'` columns are always inert. */
+  /** Opt out of resizing. Action columns are never resizable. */
   resizable?: boolean
   frozen?: FrozenZone
 
-  // Type + editing (D4 / R4).
+  // Type and editing
   type?: CellType
   options?: SelectOption[]
   editable?: boolean | ((ctx: CellRenderContext<T>) => boolean)
   /** Coerce/validate the draft before commit (e.g. string -> number). */
   parseValue?: (next: unknown, ctx: CellEditContext<T>) => unknown
   /**
-   * Synchronously validate the value before commit. Return an error message to REJECT the commit,
-   * or null/undefined to accept. Receives the value AFTER `parseValue` (i.e. what would actually be
-   * committed). Runs only when the value CHANGED — an unchanged cell commits as a no-op without
-   * validating, so opening/closing an already-invalid cell never traps the user. On an explicit
-   * save (Enter / Tab / `ctx.commit`) a rejection keeps the editor open and surfaces the message via
-   * `ctx.status === 'error'` / `ctx.error`; on an implicit one (blur / outside-click) the draft is
-   * discarded. After an explicit rejection, corrective edits are revalidated after a short pause;
-   * the error remains visible until the latest parsed draft passes. See DECISIONS.md D4.
+   * Validate a changed, parsed value before commit. Return a message to reject it. Explicit
+   * rejections keep the editor open; implicit rejections discard the draft.
    */
   validate?: (value: unknown, ctx: CellEditContext<T>) => string | null | undefined
-  /** Per-column commit. Grid-level `onCellCommit` is the fallback (R4). */
+  /** Commit handler for this column. Falls back to the grid-level handler. */
   onCommit?: (update: CellCommit<T>) => Promise<void> | void
 
-  // Render hooks (D4 / D7). All optional — defaults coerce `value` to a truncated string.
+  // Render hooks. Defaults coerce values to truncated strings.
   renderRead?: (ctx: CellRenderContext<T>) => ReactNode
+  /** Reserved for an overflow popover. Not currently rendered by the grid. */
   renderOverflow?: (ctx: CellRenderContext<T>) => ReactNode
   renderEdit?: (ctx: CellEditContext<T>) => ReactNode
-  /** Enable click-to-popover when content overflows. Default true. */
+  /** Reserved for overflow behavior. */
   overflow?: boolean
 
-  // Styling hooks (D7).
+  // Reserved styling hooks; the current cell shell does not apply them.
   className?: string | ((ctx: CellRenderContext<T>) => string)
   style?: CSSProperties | ((ctx: CellRenderContext<T>) => CSSProperties)
   headerClassName?: string
