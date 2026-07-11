@@ -3,10 +3,11 @@ import { memo } from "react";
 import { HEADER_BG, RESIZE_HANDLE_WIDTH } from "../internal/constants";
 import { cellBase } from "../internal/style";
 
+import type { ReactNode } from "react";
 import type { FrozenZone } from "../core/types";
 
 export const HeaderCell = memo(function HeaderCell(props: {
-  name: string;
+  content: ReactNode;
   x: number;
   width: number;
   height: number;
@@ -16,7 +17,7 @@ export const HeaderCell = memo(function HeaderCell(props: {
   /** Show the resize handle at the right edge. */
   resizable?: boolean;
 }) {
-  const { name, x, width, height, frozen, draggable, resizable } = props;
+  const { content, x, width, height, frozen, draggable, resizable } = props;
   return (
     <div
       data-frozen={frozen}
@@ -32,7 +33,7 @@ export const HeaderCell = memo(function HeaderCell(props: {
         cursor: draggable ? "grab" : undefined,
       }}
     >
-      {name}
+      {content}
       {/* Resize handle — a hover affordance only; the gesture is driven by the container's
           pointerdown via `headerResizeHitTest` (which matches a slightly wider band than this strip,
           symmetric around the boundary), so this purely supplies the `col-resize` cursor. */}

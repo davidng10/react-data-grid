@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
+import { resolveColumnCapabilities } from "../internal/column-capabilities";
 import {
   DEFAULT_COL_WIDTH,
   GUTTER_WIDTH,
@@ -42,14 +43,14 @@ export interface GridLayout<T> {
 // Derives zone geometry and drives row and center-column virtualization. Interaction state does not
 // belong here.
 export function useGridLayout<T>(args: {
-  columns: Column<T>[];
+  columns: readonly Column<T>[];
   /** Controlled column order; source order is used when omitted. */
-  columnOrder?: ColumnId[];
+  columnOrder?: readonly ColumnId[];
   /**
    * In-session widths keyed by column id. Missing entries fall back to `column.width`.
    */
-  widthOverrides?: Record<ColumnId, number>;
-  rows: T[];
+  widthOverrides?: Readonly<Record<ColumnId, number>>;
+  rows: readonly T[];
   rowHeight: number;
   overscanRows: number;
   overscanCols: number;
@@ -142,7 +143,7 @@ export function useGridLayout<T>(args: {
           width: layout.widths[i],
           visualIndex,
           localIndex: i,
-          selectable: c.type !== "action",
+          selectable: resolveColumnCapabilities(c).selectable,
         });
         order.push(c.id);
         visualIndex++;

@@ -1,31 +1,29 @@
 import { useCallback, useMemo, useState } from "react";
 import { Button, Select } from "antd";
 
-import { DataGrid, cellKey } from "../../data-grid";
+import { DataGrid } from "../../data-grid";
 import { ControlPanel } from "../ControlPanel";
 import { STRESS, WORDS, makeColumns, makeRows } from "../fixtures";
 
-import type {
-  CellCommit,
-  CellKey,
-  ColumnId,
-  FrozenZone,
-} from "../../data-grid";
+import type { CellCommit, ColumnId, FrozenZone } from "../../data-grid";
 import type { DemoColumn, DemoRow } from "../fixtures";
 
 const MAX_FREEZE_PER_SIDE = 4;
 
 // Demo-only: AntD lives ONLY here (a devDependency), never in the grid. The grid stays headless —
-// this column proves the `renderEdit` override path with a real third-party component.
+// this column proves the `renderEditor` override path with a real third-party component.
 const WORD_OPTIONS = WORDS.map((w) => ({ label: w, value: w }));
 
 // The two columns we make editable in the demo.
 const TEXT_COL = "c2"; // default floating text editor (zero-dep)
-const SELECT_COL = "c1"; // AntD Select via renderEdit (override path)
+const SELECT_COL = "c1"; // AntD Select via renderEditor (override path)
+
+const cellKey = (rowId: string | number, columnId: ColumnId) =>
+  JSON.stringify([typeof rowId, rowId, columnId]);
 
 // A frozen-right "actions" column. `type: "action"` makes its cells NON-selectable (the grid skips
 // them for pointer + keyboard), so the AntD Button inside handles its own clicks — no
-// stopPropagation/preventDefault wiring needed. Content lives in `renderRead`.
+// stopPropagation/preventDefault wiring needed. Content lives in `renderCell`.
 const ACTIONS_COLUMN: DemoColumn = {
   id: "actions",
   name: "Actions",
@@ -33,7 +31,7 @@ const ACTIONS_COLUMN: DemoColumn = {
   frozen: "right",
   type: "action",
   accessor: () => "",
-  renderRead: () => (
+  renderCell: () => (
     <div style={{ display: "flex", alignItems: "center", height: "100%" }}>
       <Button
         size="small"
@@ -68,7 +66,7 @@ export function GridPlayground() {
   // The parent-owned, authoritative edit store (R4): a sparse override map keyed by stable
   // RowId:ColumnId. The grid never mutates row data — committed values land here and flow back in
   // through the editable columns' `accessor. This override state exist because the synthetic data is generated.
-  const [overrides, setOverrides] = useState<Map<CellKey, string>>(
+  const [overrides, setOverrides] = useState<Map<string, string>>(
     () => new Map()
   );
 
@@ -132,13 +130,13 @@ export function GridPlayground() {
               overrides.get(cellKey(row.id, SELECT_COL)) ?? c.accessor(row),
             // Override editor: a real AntD Select. The grid supplies draft/commit/cancel/status;
             // AntD supplies the UI.
-            renderEdit: (ctx) => (
+            renderEditor: (ctx) => (
               <Select
                 autoFocus
                 defaultOpen
                 // Borderless + fill: the grid's editor host provides the panel frame (border/shadow/
                 // bg), so the Select renders transparently into it — no double border, no clashing
-                // chrome. Style the panel itself via the grid's `editorStyle`/`editorClassName`.
+                // chrome.
                 variant="borderless"
                 // Render the dropdown INSIDE the editor host (not AntD's default body portal) so it
                 // (a) scrolls with the floating editor and (b) counts as "inside" for the grid's
@@ -227,7 +225,7 @@ export function GridPlayground() {
           rowHeight={rowHeight}
           enableRowSelection={rowSelection}
           columnOrder={columnOrder}
-          onColumnOrderChange={setColumnOrder}
+          onColumnOrderChange={(order) => setColumnOrder([...order])}
           onCellCommit={onCellCommit}
         />
       </div>

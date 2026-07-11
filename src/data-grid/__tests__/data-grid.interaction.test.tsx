@@ -258,68 +258,71 @@ describe("column resize", () => {
   // c0..c3 are 100px → right-edge boundaries at x = 100/200/300/400; header strip is y ∈ [0, 32).
   // A press within RESIZE_HANDLE_WIDTH of a boundary grabs the column on its LEFT.
   it("a header right-edge drag commits the new width on release", () => {
-    const onColumnResize = vi.fn();
-    const { scroller } = renderGrid({ onColumnResize });
+    const onColumnWidthsChange = vi.fn();
+    const { scroller } = renderGrid({ onColumnWidthsChange });
 
     down(scroller, 100, 16); // c0 right edge
     move(scroller, 150, 16); // +50 → 150
     up(scroller, 150, 16);
 
-    expect(onColumnResize).toHaveBeenCalledTimes(1);
-    expect(onColumnResize).toHaveBeenCalledWith("c0", 150);
+    expect(onColumnWidthsChange).toHaveBeenCalledTimes(1);
+    expect(onColumnWidthsChange).toHaveBeenCalledWith({ c0: 150 });
   });
 
   it("clamps the committed width to the column maxWidth", () => {
-    const onColumnResize = vi.fn();
+    const onColumnWidthsChange = vi.fn();
     const cols: Column<Row>[] = [
       { id: "c0", name: "C0", width: 100, maxWidth: 130, accessor: (r) => r.v },
       { id: "c1", name: "C1", width: 100, accessor: (r) => r.v },
     ];
-    const { scroller } = renderGrid({ columns: cols, onColumnResize });
+    const { scroller } = renderGrid({ columns: cols, onColumnWidthsChange });
 
     down(scroller, 100, 16); // c0 right edge
     move(scroller, 400, 16); // far past max
     up(scroller, 400, 16);
 
-    expect(onColumnResize).toHaveBeenCalledWith("c0", 130);
+    expect(onColumnWidthsChange).toHaveBeenCalledWith({ c0: 130 });
   });
 
   it("clamps the committed width to the default min floor", () => {
-    const onColumnResize = vi.fn();
-    const { scroller } = renderGrid({ onColumnResize });
+    const onColumnWidthsChange = vi.fn();
+    const { scroller } = renderGrid({ onColumnWidthsChange });
 
     down(scroller, 100, 16); // c0 right edge
     move(scroller, 20, 16); // 100 − 80 = 20, below MIN_COL_WIDTH (48)
     up(scroller, 20, 16);
 
-    expect(onColumnResize).toHaveBeenCalledWith("c0", 48);
+    expect(onColumnWidthsChange).toHaveBeenCalledWith({ c0: 48 });
   });
 
   it("a bare press on the handle (no movement) is a no-op", () => {
-    const onColumnResize = vi.fn();
-    const { scroller } = renderGrid({ onColumnResize });
+    const onColumnWidthsChange = vi.fn();
+    const { scroller } = renderGrid({ onColumnWidthsChange });
 
     down(scroller, 100, 16);
     up(scroller, 100, 16);
 
-    expect(onColumnResize).not.toHaveBeenCalled();
+    expect(onColumnWidthsChange).not.toHaveBeenCalled();
   });
 
   it("resize wins over reorder at a column boundary", () => {
-    const onColumnResize = vi.fn();
+    const onColumnWidthsChange = vi.fn();
     const onColumnOrderChange = vi.fn();
-    const { scroller } = renderGrid({ onColumnResize, onColumnOrderChange });
+    const { scroller } = renderGrid({
+      onColumnWidthsChange,
+      onColumnOrderChange,
+    });
 
     down(scroller, 100, 16); // c0 right edge → resize claims the gesture
     move(scroller, 160, 16);
     up(scroller, 160, 16);
 
-    expect(onColumnResize).toHaveBeenCalledWith("c0", 160);
+    expect(onColumnWidthsChange).toHaveBeenCalledWith({ c0: 160 });
     expect(onColumnOrderChange).not.toHaveBeenCalled();
   });
 
   it("does not resize a column opted out via resizable:false", () => {
-    const onColumnResize = vi.fn();
+    const onColumnWidthsChange = vi.fn();
     const cols: Column<Row>[] = [
       {
         id: "c0",
@@ -330,18 +333,18 @@ describe("column resize", () => {
       },
       { id: "c1", name: "C1", width: 100, accessor: (r) => r.v },
     ];
-    const { scroller } = renderGrid({ columns: cols, onColumnResize });
+    const { scroller } = renderGrid({ columns: cols, onColumnWidthsChange });
 
     down(scroller, 100, 16); // c0 right edge — but c0 is not resizable
     move(scroller, 150, 16);
     up(scroller, 150, 16);
 
-    expect(onColumnResize).not.toHaveBeenCalled();
+    expect(onColumnWidthsChange).not.toHaveBeenCalled();
   });
 
   it("sets col-resize during the gesture and resets the cursor after", () => {
-    const onColumnResize = vi.fn();
-    const { scroller } = renderGrid({ onColumnResize });
+    const onColumnWidthsChange = vi.fn();
+    const { scroller } = renderGrid({ onColumnWidthsChange });
 
     down(scroller, 100, 16);
     expect(scroller.style.cursor).toBe("col-resize");
@@ -351,7 +354,7 @@ describe("column resize", () => {
   });
 
   it("uncontrolled (default): the grid applies the new width itself, no wiring", () => {
-    const { scroller } = renderGrid(); // no columnWidths, no onColumnResize
+    const { scroller } = renderGrid(); // no columnWidths or callback
     expect(screen.getByText("C0").style.width).toBe("100px");
 
     down(scroller, 100, 16); // c0 right edge
@@ -361,18 +364,18 @@ describe("column resize", () => {
     expect(screen.getByText("C0").style.width).toBe("150px"); // grid owns it
   });
 
-  it("enableColumnResize={false} disables the gesture + handle", () => {
-    const onColumnResize = vi.fn();
+  it("resizable={false} disables the gesture + handle", () => {
+    const onColumnWidthsChange = vi.fn();
     const { scroller } = renderGrid({
-      enableColumnResize: false,
-      onColumnResize,
+      resizable: false,
+      onColumnWidthsChange,
     });
 
     down(scroller, 100, 16);
     move(scroller, 150, 16);
     up(scroller, 150, 16);
 
-    expect(onColumnResize).not.toHaveBeenCalled();
+    expect(onColumnWidthsChange).not.toHaveBeenCalled();
     expect(screen.getByText("C0").style.width).toBe("100px"); // unchanged
   });
 });

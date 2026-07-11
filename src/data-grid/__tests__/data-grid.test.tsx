@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import "@testing-library/jest-dom/vitest"; // jest-dom matchers (toBeInTheDocument, …) typed on expect
 
-import { fireEvent, render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import { DataGrid } from "../data-grid";
 
@@ -117,8 +117,7 @@ describe("DataGrid (jsdom integration)", () => {
     expect(onColumnOrderChange).not.toHaveBeenCalled();
   });
 
-  it("does not emit when reorder is uncontrolled (no onColumnOrderChange)", () => {
-    // Without the handler the grid won't start a drag at all (reorderable === false).
+  it("reorders internally when uncontrolled (no onColumnOrderChange)", () => {
     const { container } = render(
       <DataGrid rows={ROWS} columns={cols()} getRowId={(r) => r.id} />
     );
@@ -137,6 +136,8 @@ describe("DataGrid (jsdom integration)", () => {
       pointerId: 1,
     });
     fireEvent.pointerUp(scroller, { clientX: 360, clientY: 16, pointerId: 1 });
-    expect(getScroller(container)).toBeInTheDocument();
+    expect(screen.getByText("C1")).toHaveStyle({
+      transform: "translateX(300px)",
+    });
   });
 });

@@ -9,6 +9,7 @@ import { ERROR_FLASH_MS } from "../core/store/pending-store";
 import type { CSSProperties } from "react";
 import type { GridGeometry, Zone, ZoneRect } from "../core/selection/geometry";
 import type { PendingStore } from "../core/store/pending-store";
+import type { RowId } from "../core/types";
 
 const PENDING_BG = "#ffffff";
 const PENDING_FG = "#78716c";
@@ -131,8 +132,9 @@ export const PendingOverlay = memo(function PendingOverlay(props: {
   zone: Zone;
   pendingStore: PendingStore;
   geom: GridGeometry;
+  rowIndexById: ReadonlyMap<RowId, number>;
 }) {
-  const { zone, pendingStore, geom } = props;
+  const { zone, pendingStore, geom, rowIndexById } = props;
   const pending = useSyncExternalStore(
     pendingStore.subscribe,
     pendingStore.getSnapshot
@@ -146,7 +148,9 @@ export const PendingOverlay = memo(function PendingOverlay(props: {
     status: string;
   }[] = [];
   for (const [key, entry] of pending) {
-    const rect = cellToZoneRect(entry.cell, geom);
+    const rowIndex = rowIndexById.get(entry.rowId);
+    if (rowIndex == null) continue;
+    const rect = cellToZoneRect({ rowIndex, columnId: entry.columnId }, geom);
     if (!rect || rect.zone !== zone) continue;
     items.push({ key, rect, value: entry.value, status: entry.status });
   }

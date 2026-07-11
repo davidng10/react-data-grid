@@ -30,9 +30,8 @@ const HOST_POSITION: CSSProperties = {
 };
 
 // The default visual frame for the editor "panel". This is what the integrator restyles via
-// `editorClassName` / `editorStyle` (and the `data-editing` / `data-invalid` attributes, for plain
-// CSS). The default editors fill this frame transparently; a custom `renderEdit` should too (e.g.
-// AntD `borderless`), so every editor — default or custom — shares one consistently-styled panel.
+// The default editors fill this frame transparently; a custom `renderEditor` should too (e.g. AntD
+// `borderless`), so every editor — default or custom — shares one consistently-styled panel.
 const HOST_FRAME: CSSProperties = {
   zIndex: 1000,
   borderRadius: 4,
@@ -49,8 +48,8 @@ const HOST_ERROR_BORDER = "1px solid #dc2626";
 export interface EditorPortalProps<T> {
   editStore: EditStore;
   scrollRef: { current: HTMLDivElement | null };
-  columns: Column<T>[];
-  rows: T[];
+  columns: readonly Column<T>[];
+  rows: readonly T[];
   getRowId: (row: T, index: number) => RowId;
   geom: GridGeometry;
   // View constants (px) needed to convert the active cell to viewport coords each reposition.
@@ -66,9 +65,6 @@ export interface EditorPortalProps<T> {
   commitImplicit: () => void;
   cancel: () => void;
   commitAndMove: (dir: Direction) => void;
-  // Consumer styles are merged over the default editor frame.
-  editorClassName?: string;
-  editorStyle?: CSSProperties;
 }
 
 export function EditorPortal<T>(props: EditorPortalProps<T>) {
@@ -88,8 +84,6 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
     commitImplicit,
     cancel,
     commitAndMove,
-    editorClassName,
-    editorStyle,
   } = props;
 
   const edit = useSyncExternalStore(editStore.subscribe, editStore.getSnapshot);
@@ -209,6 +203,7 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
     rowId: getRowId(row, cell.rowIndex),
     rowIndex: cell.rowIndex,
     column,
+    columnId: column.id,
     value: column.accessor(row),
     draft: edit.draft,
     setDraft,
@@ -221,8 +216,8 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
   };
 
   let content: ReactNode;
-  if (column.renderEdit) {
-    content = column.renderEdit(ctx);
+  if (column.renderEditor) {
+    content = column.renderEditor(ctx);
   } else if (column.type === "select") {
     content = (
       <NativeSelectEditor
@@ -247,15 +242,11 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
   }
 
   return createPortal(
-    // Frame (default + validation state) ← editorStyle (integrator override) ← position
-    // (grid-owned, always wins). `data-invalid` lets a styled host supply its own error treatment.
     <div
       ref={hostRef}
-      className={editorClassName}
       style={{
         ...HOST_FRAME,
         border: hasError ? HOST_ERROR_BORDER : HOST_EDITING_BORDER,
-        ...editorStyle,
         ...HOST_POSITION,
       }}
       data-editing=""

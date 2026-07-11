@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { stepCoord } from "../core/selection/geometry";
 import { ERROR_FLASH_MS } from "../core/store/pending-store";
+import { resolveColumnCapabilities } from "../internal/column-capabilities";
 import { DEFAULT_COL_WIDTH } from "../internal/constants";
 
 import type { RefObject } from "react";
@@ -40,8 +41,8 @@ export function useCellEditing<T>(args: {
   store: GridStore;
   editStore: EditStore;
   pendingStore: PendingStore;
-  columns: Column<T>[];
-  rows: T[];
+  columns: readonly Column<T>[];
+  rows: readonly T[];
   getRowId: (row: T, index: number) => RowId;
   rowHeight: number;
   geom: GridGeometry;
@@ -86,15 +87,22 @@ export function useCellEditing<T>(args: {
 
   const isEditable = (cell: CellCoord): boolean => {
     const col = findColumn(cell.columnId);
-    if (!col || col.type === "action" || !col.editable) return false;
-    if (col.editable === true) return true;
+    if (!col) return false;
+    const editable = resolveColumnCapabilities(col).editable;
+    if (!editable) return false;
+    if (editable === true) return true;
     const row = rows[cell.rowIndex];
-    return col.editable({
+    if (row == null) return false;
+    const width = geom.placement(cell.columnId)?.width ?? DEFAULT_COL_WIDTH;
+    return editable({
       row,
       rowId: getRowId(row, cell.rowIndex),
       rowIndex: cell.rowIndex,
       column: col,
+      columnId: col.id,
       value: col.accessor(row),
+      width,
+      height: rowHeight,
     });
   };
 
@@ -104,7 +112,12 @@ export function useCellEditing<T>(args: {
     clearCorrectiveTimer();
     const col = findColumn(cell.columnId);
     const row = rows[cell.rowIndex];
-    if (!col || row == null || !isEditable(cell) || pendingStore.has(cell))
+    if (
+      !col ||
+      row == null ||
+      !isEditable(cell) ||
+      pendingStore.has(getRowId(row, cell.rowIndex), cell.columnId)
+    )
       return false;
     store.focusCell(cell);
     scrollCellIntoView(cell);
@@ -129,6 +142,7 @@ export function useCellEditing<T>(args: {
       rowId,
       rowIndex: cell.rowIndex,
       column: col,
+      columnId: col.id,
       value: previousValue,
       draft,
       setDraft: editStore.setDraft,
@@ -226,12 +240,15 @@ export function useCellEditing<T>(args: {
     };
     const handleCommitError = (error: unknown) => {
       // Preserve the built-in behavior first so a consumer callback cannot prevent rollback/flash.
-      pendingStore.setError(cell);
-      window.setTimeout(() => pendingStore.clear(cell), ERROR_FLASH_MS);
+      pendingStore.setError(rowId, col.id);
+      window.setTimeout(
+        () => pendingStore.clear(rowId, col.id),
+        ERROR_FLASH_MS
+      );
       onCellCommitError?.({ update, error });
     };
 
-    pendingStore.setPending(cell, nextValue); // optimistic
+    pendingStore.setPending(rowId, col.id, nextValue); // optimistic
     let result: Promise<void> | void;
     try {
       result = handler(update);
@@ -240,7 +257,7 @@ export function useCellEditing<T>(args: {
       return true;
     }
     Promise.resolve(result)
-      .then(() => pendingStore.clear(cell)) // persisted → value flows back, overlay clears
+      .then(() => pendingStore.clear(rowId, col.id)) // persisted → value flows back, overlay clears
       .catch(handleCommitError); // revert + flash; the draft is discarded
     return true;
   };

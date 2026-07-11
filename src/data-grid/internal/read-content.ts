@@ -6,10 +6,21 @@ export function readContent<T>(
   col: Column<T>,
   row: T,
   rowIndex: number,
-  rowId: RowId
+  rowId: RowId,
+  width: number,
+  height: number
 ): ReactNode {
   const value = col.accessor(row);
-  return col.renderRead
-    ? col.renderRead({ row, rowId, rowIndex, column: col, value })
+  return col.renderCell
+    ? col.renderCell({
+        row,
+        rowId,
+        rowIndex,
+        column: col,
+        columnId: col.id,
+        value,
+        width,
+        height,
+      })
     : String(value ?? "");
 }

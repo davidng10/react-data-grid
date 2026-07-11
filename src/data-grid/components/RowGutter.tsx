@@ -23,7 +23,9 @@ export function RowGutter(props: {
   rowCount: number;
   bodyHeight: number;
   rowHeight: number;
-  getAllRowIds: () => RowId[];
+  allRowIds: readonly RowId[];
+  onSelectedRowIdsChange: (rowIds: ReadonlySet<RowId>) => void;
+  disabled: boolean;
   strongDivider: boolean;
 }) {
   const {
@@ -33,7 +35,9 @@ export function RowGutter(props: {
     rowCount,
     bodyHeight,
     rowHeight,
-    getAllRowIds,
+    allRowIds,
+    onSelectedRowIdsChange,
+    disabled,
     strongDivider,
   } = props;
   const selection = useSyncExternalStore(store.subscribe, store.getSnapshot);
@@ -82,13 +86,20 @@ export function RowGutter(props: {
         <input
           type="checkbox"
           aria-label="Select all rows"
+          disabled={disabled}
           checked={allChecked}
           ref={(el) => {
             if (el) el.indeterminate = someChecked;
           }}
-          onChange={() =>
-            store.setRowsSelected(getAllRowIds(), !(allChecked || someChecked))
-          }
+          onChange={() => {
+            const next = new Set(selection.selectedRows);
+            if (allChecked || someChecked) {
+              for (const rowId of allRowIds) next.delete(rowId);
+            } else {
+              for (const rowId of allRowIds) next.add(rowId);
+            }
+            onSelectedRowIdsChange(next);
+          }}
         />
       </div>
       <div
@@ -112,8 +123,14 @@ export function RowGutter(props: {
               <input
                 type="checkbox"
                 aria-label={`Select row ${vr.index + 1}`}
+                disabled={disabled}
                 checked={selection.selectedRows.has(rowId)}
-                onChange={() => store.toggleRow(rowId)}
+                onChange={() => {
+                  const next = new Set(selection.selectedRows);
+                  if (next.has(rowId)) next.delete(rowId);
+                  else next.add(rowId);
+                  onSelectedRowIdsChange(next);
+                }}
               />
             </div>
           );

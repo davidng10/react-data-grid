@@ -6,6 +6,7 @@ import {
   reorderWithinZone,
 } from "../core/selection/geometry";
 import { edgeScrollDelta } from "../internal/auto-scroll";
+import { resolveColumnCapabilities } from "../internal/column-capabilities";
 import { DRAG_THRESHOLD } from "../internal/constants";
 
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
@@ -31,7 +32,7 @@ export function useColumnDrag<T>(args: {
   scrollRef: RefObject<HTMLDivElement | null>;
   layout: GridLayout<T>;
   helpers: GridGeometryHelpers<T>;
-  onColumnOrderChange?: (order: ColumnId[]) => void;
+  onColumnOrderChange: (order: readonly ColumnId[]) => void;
 }): ColumnDragHandlers {
   const {
     reorderable,
@@ -105,7 +106,9 @@ export function useColumnDrag<T>(args: {
     const header = reorderable ? headerHitTest(e.clientX, e.clientY) : null;
     if (!header) return false;
     // Barrier bounds remain constant because the source and zone cannot change during a drag.
-    const isBarrier = zoneColsFor(header.zone).map((c) => c.type === "action");
+    const isBarrier = zoneColsFor(header.zone).map(
+      (c) => resolveColumnCapabilities(c).reorderBarrier
+    );
     const bounds = dragBounds(isBarrier, header.sourceIndex);
     dragSourceRef.current = { ...header, bounds };
     pointerRef.current = { x: e.clientX, y: e.clientY };
@@ -173,7 +176,7 @@ export function useColumnDrag<T>(args: {
         (id) => placementMap.get(id)?.zone
       );
       dragStore.end();
-      if (next !== columnOrder) onColumnOrderChange?.(next); // same ref ⇒ drop onto self ⇒ no-op
+      if (next !== columnOrder) onColumnOrderChange(next); // same ref ⇒ drop onto self ⇒ no-op
     }
     return true;
   };

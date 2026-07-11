@@ -5,6 +5,21 @@
 // Core types are public. Stores and geometry helpers remain implementation details.
 
 export { DataGrid } from "./data-grid";
-export type { DataGridProps, GridStats } from "./data-grid";
-
-export * from "./core/types";
+export type {
+  CellCommit,
+  CellCommitFailure,
+  CellCoord,
+  CellEditContext,
+  CellRange,
+  CellRenderContext,
+  CellType,
+  Column,
+  ColumnId,
+  DataGridProps,
+  EditStatus,
+  FrozenZone,
+  GridSelection,
+  HeaderRenderContext,
+  RowId,
+  SelectOption,
+} from "./core/types";

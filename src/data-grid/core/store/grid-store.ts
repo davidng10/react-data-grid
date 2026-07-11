@@ -22,6 +22,10 @@ export interface GridStore {
   toggleRow: (rowId: RowId) => void;
   /** Bulk add/remove a set of rows (select-all / clear-all over the current row set). */
   setRowsSelected: (rowIds: RowId[], selected: boolean) => void;
+  /** Replace checkbox selection from controlled props or row reconciliation. */
+  setSelectedRows: (rowIds: ReadonlySet<RowId>) => void;
+  /** Replace the complete selection after stable-id reconciliation. */
+  setSelection: (selection: GridSelection) => void;
   /** Reset focus, range, and row selection. */
   reset: () => void;
 }
@@ -76,6 +80,22 @@ export function createGridStore(initial?: Partial<GridSelection>): GridStore {
       if (selected) for (const id of rowIds) selectedRows.add(id);
       else for (const id of rowIds) selectedRows.delete(id);
       set({ ...state, selectedRows });
+    },
+
+    setSelectedRows(rowIds) {
+      const selectedRows = new Set(rowIds);
+      if (
+        selectedRows.size === state.selectedRows.size &&
+        [...selectedRows].every((id) => state.selectedRows.has(id))
+      ) {
+        return;
+      }
+      set({ ...state, selectedRows });
+    },
+
+    setSelection(selection) {
+      if (selection === state) return;
+      set(selection);
     },
 
     reset() {

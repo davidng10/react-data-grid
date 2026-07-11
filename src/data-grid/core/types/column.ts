@@ -1,6 +1,6 @@
 // Column schema and rendering contract. React imports are type-only.
 
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { CellCommit, EditStatus } from "./editing";
 import type { ColumnId, RowId } from "./ids";
 
@@ -15,14 +15,28 @@ export interface SelectOption {
   value: string;
 }
 
-/** Context passed to read-mode / overflow render hooks and predicates. */
+/** Context passed to read-mode render hooks and predicates. */
 export interface CellRenderContext<T> {
   row: T;
   rowId: RowId;
   rowIndex: number;
   column: Column<T>;
+  columnId: ColumnId;
   /** Result of `column.accessor(row)`. */
   value: unknown;
+  width: number;
+  height: number;
+}
+
+/** Context passed to a column header renderer. */
+export interface HeaderRenderContext<T> {
+  column: Column<T>;
+  columnId: ColumnId;
+  columnIndex: number;
+  frozen?: FrozenZone;
+  width: number;
+  resizable: boolean;
+  reorderable: boolean;
 }
 
 /** Edit context. The editor owns input state; the grid owns commit behavior. */
@@ -55,11 +69,17 @@ export interface Column<T> {
   maxWidth?: number;
   /** Opt out of resizing. Action columns are never resizable. */
   resizable?: boolean;
+  /** Opt out of pointer column reordering. Action columns are never reorderable. */
+  reorderable?: boolean;
+  /** Prevent other columns from being reordered across this column. */
+  reorderBarrier?: boolean;
   frozen?: FrozenZone;
 
   // Type and editing
   type?: CellType;
   options?: SelectOption[];
+  /** Opt out of pointer and keyboard cell selection. */
+  selectable?: boolean;
   editable?: boolean | ((ctx: CellRenderContext<T>) => boolean);
   /** Coerce/validate the draft before commit (e.g. string -> number). */
   parseValue?: (next: unknown, ctx: CellEditContext<T>) => unknown;
@@ -75,16 +95,7 @@ export interface Column<T> {
   onCommit?: (update: CellCommit<T>) => Promise<void> | void;
 
   // Render hooks. Defaults coerce values to truncated strings.
-  renderRead?: (ctx: CellRenderContext<T>) => ReactNode;
-  /** Reserved for an overflow popover. Not currently rendered by the grid. */
-  renderOverflow?: (ctx: CellRenderContext<T>) => ReactNode;
-  renderEdit?: (ctx: CellEditContext<T>) => ReactNode;
-  /** Reserved for overflow behavior. */
-  overflow?: boolean;
-
-  // Reserved styling hooks; the current cell shell does not apply them.
-  className?: string | ((ctx: CellRenderContext<T>) => string);
-  style?: CSSProperties | ((ctx: CellRenderContext<T>) => CSSProperties);
-  headerClassName?: string;
-  headerStyle?: CSSProperties;
+  renderCell?: (ctx: CellRenderContext<T>) => ReactNode;
+  renderHeader?: (ctx: HeaderRenderContext<T>) => ReactNode;
+  renderEditor?: (ctx: CellEditContext<T>) => ReactNode;
 }

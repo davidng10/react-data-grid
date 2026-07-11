@@ -1,63 +1,43 @@
-// Additional grid contracts.
+// Canonical public grid contract.
 
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
 import type { Column } from "./column";
 import type { CellCommit, CellCommitFailure } from "./editing";
 import type { ColumnId, RowId } from "./ids";
 import type { GridSelection } from "./selection";
 
-/** Fluid fills the parent; fixed uses explicit pixel dimensions. */
-export type GridSize =
-  { mode: "fluid" } | { mode: "fixed"; width: number; height: number };
-
-/** Class-name hooks for grid parts. */
-export interface GridClassNames {
-  root?: string;
-  header?: string;
-  headerCell?: string;
-  body?: string;
-  row?: string;
-  cell?: string;
-}
-
-export interface ExpandedRowContext<T> {
-  row: T;
-  rowId: RowId;
-}
-
-export interface GridProps<T> {
-  // Data
-  rows: T[];
-  columns: Column<T>[];
+export interface DataGridProps<T> {
+  rows: readonly T[];
+  columns: readonly Column<T>[];
   getRowId: (row: T, index: number) => RowId;
 
-  // Layout
-  /** Uniform row height in pixels. */
   rowHeight?: number;
-  size?: GridSize;
+  overscanRows?: number;
+  overscanColumns?: number;
 
-  // Expanded rows
-  expandedRowHeight?: number;
-  renderExpanded?: (ctx: ExpandedRowContext<T>) => ReactNode;
-
-  // Selection
-  selection?: GridSelection;
+  enableRowSelection?: boolean;
+  selectedRowIds?: ReadonlySet<RowId>;
+  defaultSelectedRowIds?: ReadonlySet<RowId>;
+  onSelectedRowIdsChange?: (rowIds: ReadonlySet<RowId>) => void;
+  /** Observes focus, range, and selected rows; it does not control focus or range. */
   onSelectionChange?: (next: GridSelection) => void;
 
-  // Editing
+  reorderable?: boolean;
+  columnOrder?: readonly ColumnId[];
+  defaultColumnOrder?: readonly ColumnId[];
+  onColumnOrderChange?: (order: readonly ColumnId[]) => void;
+
+  resizable?: boolean;
+  columnWidths?: Readonly<Record<ColumnId, number>>;
+  defaultColumnWidths?: Readonly<Record<ColumnId, number>>;
+  onColumnWidthsChange?: (widths: Readonly<Record<ColumnId, number>>) => void;
+
   onCellCommit?: (update: CellCommit<T>) => Promise<void> | void;
   onCellCommitError?: (failure: CellCommitFailure<T>) => void;
 
-  // Controlled column order
-  columnOrder?: ColumnId[];
-  onColumnOrderChange?: (order: ColumnId[]) => void;
-
-  // Column resize
-  enableColumnResize?: boolean;
-  onColumnResize?: (columnId: ColumnId, width: number) => void;
-
-  // Styling
+  id?: string;
   className?: string;
   style?: CSSProperties;
-  classNames?: GridClassNames;
+  "aria-label"?: string;
+  "aria-labelledby"?: string;
 }

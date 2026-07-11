@@ -9,7 +9,7 @@ selection, editing, and pointer interactions off the main cell-rendering path.
 - Left and right frozen columns
 - Cell focus, range selection, and checkbox row selection
 - Keyboard navigation and type-to-edit
-- Custom read and edit renderers
+- Custom cell, header, and editor renderers
 - Synchronous validation and asynchronous commits
 - Within-zone column reordering
 - Column resizing with optional persistence callbacks
@@ -88,17 +88,23 @@ the caller; commit handlers must update `rows` with accepted values.
 ## Column behavior
 
 - `accessor` reads the displayed value from a row.
-- `editable` enables editing; `renderEdit` can provide a custom editor.
+- `editable` enables editing; `renderEditor` can provide a custom editor.
+- `renderCell` and `renderHeader` customize read-mode cells and headers.
 - `parseValue` converts a draft before validation and commit.
 - `validate` returns an error message to reject a value.
 - `onCommit` overrides the grid-level `onCellCommit` for one column.
 - `frozen` pins a column to the left or right zone.
-- `resizable: false` disables resizing for one column.
-- `type: 'action'` makes a column non-selectable, non-editable, and non-resizable.
+- `selectable`, `resizable`, `reorderable`, and `reorderBarrier` customize normal-column behavior.
+- `type: 'action'` is always non-selectable, non-editable, non-resizable, non-reorderable, and a
+  reorder barrier; explicit capability props cannot override those invariants.
 
-Column order is controlled through `columnOrder` and `onColumnOrderChange`. Resized widths are kept
-for the current mount; use `onColumnResize` to persist them and provide the saved value as the
-column's next initial `width`.
+Row selection, column order, and column widths support controlled and uncontrolled use through
+`value`/`defaultValue`/`onChange`-style prop groups. Reordering and resizing work internally by
+default. A controlled value without its change callback is read-only and its matching affordances
+are disabled.
+
+Frozen columns are always rendered rather than horizontally virtualized. Keep the number frozen on
+each side small for large grids.
 
 ## Development
 

@@ -674,14 +674,14 @@ describe("cell validation", () => {
 });
 
 describe("custom read cells", () => {
-  it("renders a column’s renderRead output", () => {
+  it("renders a column’s renderCell output", () => {
     const cols: Column<Row>[] = [
       {
         id: "c0",
         name: "C0",
         width: 100,
         accessor: (r) => r.v,
-        renderRead: (ctx) => (
+        renderCell: (ctx) => (
           <span data-testid="custom">★{String(ctx.value)}</span>
         ),
       },

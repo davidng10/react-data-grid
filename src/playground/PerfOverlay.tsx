@@ -1,10 +1,12 @@
 import { useFps } from "./useFps";
 
-import type { GridStats } from "../data-grid";
-
 interface PerfOverlayProps {
   /** Polled each meter render (~4 Hz) so scroll never drives parent setState (D1). */
-  getStats?: () => GridStats | null;
+  getStats?: () => {
+    rows: number;
+    cols: number;
+    renderedCells: number;
+  } | null;
 }
 
 function fpsColor(fps: number): string {

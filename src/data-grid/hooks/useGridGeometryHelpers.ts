@@ -1,3 +1,4 @@
+import { resolveColumnCapabilities } from "../internal/column-capabilities";
 import { RESIZE_HANDLE_WIDTH } from "../internal/constants";
 import { clampNum, colIndexAtX } from "../internal/layout";
 
@@ -39,7 +40,7 @@ export interface GridGeometryHelpers<T> {
 export function useGridGeometryHelpers<T>(args: {
   scrollRef: RefObject<HTMLDivElement | null>;
   layout: GridLayout<T>;
-  rows: T[];
+  rows: readonly T[];
   rowHeight: number;
 }): GridGeometryHelpers<T> {
   const { scrollRef, layout, rows, rowHeight } = args;
@@ -114,13 +115,13 @@ export function useGridGeometryHelpers<T>(args: {
     const i = colIndexAtX(r.zl.offsets, r.zoneX);
     if (i < 0) return null;
     const col = r.cols[i];
-    // Action columns are non-selectable — a click there isn't a cell hit (no focus/drag/auto-scroll),
+    // Non-selectable columns aren't cell hits (no focus/drag/auto-scroll),
     // so interactive content inside handles its own clicks with no extra wiring.
-    if (!col || col.type === "action") return null;
+    if (!col || !resolveColumnCapabilities(col).selectable) return null;
     return { rowIndex, columnId: col.id };
   };
 
-  // Action columns are excluded because their interactive content owns pointer input.
+  // Non-reorderable columns are excluded from the header drag hit area.
   const headerHitTest = (
     clientX: number,
     clientY: number
@@ -136,7 +137,7 @@ export function useGridGeometryHelpers<T>(args: {
     if (!r) return null;
     const i = colIndexAtX(r.zl.offsets, r.zoneX);
     const col = r.cols[i];
-    if (!col || col.type === "action") return null;
+    if (!col || !resolveColumnCapabilities(col).reorderable) return null;
     return { columnId: col.id, zone: r.zone, sourceIndex: i };
   };
 
@@ -162,8 +163,7 @@ export function useGridGeometryHelpers<T>(args: {
       const boundaryX = zl.offsets[c] + zl.widths[c];
       if (Math.abs(zoneX - boundaryX) <= RESIZE_HANDLE_WIDTH) {
         const col = cols[c];
-        if (!col || col.type === "action" || col.resizable === false)
-          return null;
+        if (!col || !resolveColumnCapabilities(col).resizable) return null;
         return {
           columnId: col.id,
           zone,

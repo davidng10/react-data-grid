@@ -20,7 +20,7 @@ export interface ColumnResizeHandlers {
 // Handles commit-on-release column resizing. Pointer moves update only the guide overlay; committing
 // once on release avoids repeatedly laying out the windowed cells.
 export function useColumnResize<T>(args: {
-  /** Feature gate (`enableColumnResize`); off ⇒ no gesture, no handle. */
+  /** Resizing feature gate; off means no gesture or handle. */
   enabled: boolean;
   resizeStore: ResizeStore;
   scrollRef: RefObject<HTMLDivElement | null>;

@@ -1,5 +1,6 @@
-import { cellKey } from "../core/types";
+import { cellKey } from "../core/types/ids";
 import { PendingOverlay } from "../editors/PendingOverlay";
+import { resolveColumnCapabilities } from "../internal/column-capabilities";
 import { FROZEN_BG, HEADER_BG, HEADER_BORDER } from "../internal/constants";
 import { readContent } from "../internal/read-content";
 import { FREEZE_DIVIDER_LEFT, FREEZE_DIVIDER_RIGHT } from "../internal/style";
@@ -18,10 +19,15 @@ import type { EditStore } from "../core/store/edit-store";
 import type { GridStore } from "../core/store/grid-store";
 import type { PendingStore } from "../core/store/pending-store";
 import type { ResizeStore } from "../core/store/resize-store";
-import type { Column, RowId } from "../core/types";
+import type { Column, HeaderRenderContext, RowId } from "../core/types";
 
 /** A rendered column with its resolved zone-local position. */
-export type PlacedCol<T> = { col: Column<T>; x: number; width: number };
+export type PlacedCol<T> = {
+  col: Column<T>;
+  x: number;
+  width: number;
+  columnIndex: number;
+};
 
 // Renders one zone's header, cells, and interaction overlays. Only overlays subscribe to stores, so
 // interaction updates do not re-render this windowed body.
@@ -35,7 +41,7 @@ export function GridZone<T>(props: {
   rowHeight: number;
   totalHeight: number;
   vRows: VirtualItem[];
-  rows: T[];
+  rows: readonly T[];
   getRowId: (row: T, index: number) => RowId;
   reorderable: boolean;
   resizeEnabled: boolean;
@@ -45,6 +51,7 @@ export function GridZone<T>(props: {
   pendingStore: PendingStore;
   resizeStore: ResizeStore;
   geom: GridGeometry;
+  rowIndexById: ReadonlyMap<RowId, number>;
 }): ReactNode {
   const {
     zone,
@@ -64,6 +71,7 @@ export function GridZone<T>(props: {
     pendingStore,
     resizeStore,
     geom,
+    rowIndexById,
   } = props;
 
   // Frozen zones are `sticky` flex items (z2 — above the scrolling center) pinned to their side with
@@ -103,22 +111,34 @@ export function GridZone<T>(props: {
           borderBottom: HEADER_BORDER,
         }}
       >
-        {placedCols.map((pc) => (
-          <HeaderCell
-            key={pc.col.id}
-            name={pc.col.name}
-            x={pc.x}
-            width={pc.width}
-            height={rowHeight}
-            frozen={frozen}
-            draggable={reorderable && pc.col.type !== "action"}
-            resizable={
-              resizeEnabled &&
-              pc.col.type !== "action" &&
-              pc.col.resizable !== false
-            }
-          />
-        ))}
+        {placedCols.map((pc) => {
+          const capabilities = resolveColumnCapabilities(pc.col);
+          const headerContext: HeaderRenderContext<T> = {
+            column: pc.col,
+            columnId: pc.col.id,
+            columnIndex: pc.columnIndex,
+            frozen,
+            width: pc.width,
+            resizable: resizeEnabled && capabilities.resizable,
+            reorderable: reorderable && capabilities.reorderable,
+          };
+          return (
+            <HeaderCell
+              key={pc.col.id}
+              content={
+                pc.col.renderHeader
+                  ? pc.col.renderHeader(headerContext)
+                  : pc.col.name
+              }
+              x={pc.x}
+              width={pc.width}
+              height={rowHeight}
+              frozen={frozen}
+              draggable={headerContext.reorderable}
+              resizable={headerContext.resizable}
+            />
+          );
+        })}
         <DragOverlay zone={zone} dragStore={dragStore} rowHeight={rowHeight} />
       </div>
       {/* body */}
@@ -136,7 +156,14 @@ export function GridZone<T>(props: {
           return placedCols.map((pc) => (
             <Cell
               key={cellKey(rowId, pc.col.id)}
-              content={readContent(pc.col, row, vr.index, rowId)}
+              content={readContent(
+                pc.col,
+                row,
+                vr.index,
+                rowId,
+                pc.width,
+                vr.size
+              )}
               x={pc.x}
               y={vr.start}
               width={pc.width}
@@ -151,7 +178,12 @@ export function GridZone<T>(props: {
           editStore={editStore}
           geom={geom}
         />
-        <PendingOverlay zone={zone} pendingStore={pendingStore} geom={geom} />
+        <PendingOverlay
+          zone={zone}
+          pendingStore={pendingStore}
+          geom={geom}
+          rowIndexById={rowIndexById}
+        />
       </div>
       <ResizeOverlay
         zone={zone}

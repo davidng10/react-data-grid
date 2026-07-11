@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { GridZone } from "./components/GridZone";
 import { RowGutter } from "./components/RowGutter";
@@ -22,68 +22,35 @@ import {
 } from "./internal/constants";
 import { composePointerGestures } from "./internal/pointer-gestures";
 
-import type { CSSProperties } from "react";
 import type { PlacedCol } from "./components/GridZone";
-import type {
-  CellCommit,
-  CellCommitFailure,
-  Column,
-  ColumnId,
-  GridSelection,
-  RowId,
-} from "./core/types";
+import type { CellCoord, ColumnId, DataGridProps, RowId } from "./core/types";
+
+export type { DataGridProps } from "./core/types";
 
 // DOM-rendered grid shell. Rows and center columns are virtualized; frozen zones use sticky
 // positioning. Selection and interaction overlays subscribe to external stores so pointer moves
 // do not re-render the windowed cells.
 
-export interface GridStats {
-  rows: number;
-  cols: number;
-  renderedCells: number;
-}
+const sameSet = <T,>(a: ReadonlySet<T>, b: ReadonlySet<T>) =>
+  a.size === b.size && [...a].every((value) => b.has(value));
 
-export interface DataGridProps<T> {
-  rows: T[];
-  columns: Column<T>[];
-  getRowId: (row: T, index: number) => RowId;
-  rowHeight?: number;
-  overscanRows?: number;
-  overscanCols?: number;
-  /** Show the row-checkbox gutter pinned to the left edge. */
-  enableRowSelection?: boolean;
-  /** Called whenever the internal selection changes. */
-  onSelectionChange?: (next: GridSelection) => void;
-  /**
-   * Controlled column order. Columns remain grouped by frozen zone, so this only changes order
-   * within each zone.
-   */
-  columnOrder?: ColumnId[];
-  /** Called with the full column order after a within-zone drag. Enables column dragging. */
-  onColumnOrderChange?: (order: ColumnId[]) => void;
-  /**
-   * Enable column resizing. Defaults to `true`; individual columns can opt out with
-   * `resizable: false`. The grid keeps resized widths for the current mount.
-   */
-  enableColumnResize?: boolean;
-  /** Called after a resize with the clamped width. Use it to persist widths between mounts. */
-  onColumnResize?: (columnId: ColumnId, width: number) => void;
-  /**
-   * Fallback commit handler for columns without `onCommit`. It receives the parsed value after
-   * synchronous validation passes. The consumer remains responsible for updating `rows`.
-   */
-  onCellCommit?: (update: CellCommit<T>) => Promise<void> | void;
-  /**
-   * Called after an asynchronous cell commit rejects. The grid still performs its default rollback
-   * and temporary red flash; use this hook for application-level notifications or logging.
-   */
-  onCellCommitError?: (failure: CellCommitFailure<T>) => void;
-  /**
-   * Style the floating editor host. It exposes `data-editing` and `data-invalid` state attributes.
-   */
-  editorClassName?: string;
-  editorStyle?: CSSProperties;
-  /** Written during render so the perf meter can read counts without scroll-frequency setState. */
+const sameCell = (a: CellCoord | null, b: CellCoord | null) =>
+  a === b ||
+  (a != null &&
+    b != null &&
+    a.rowIndex === b.rowIndex &&
+    a.columnId === b.columnId);
+
+function reconcileColumnOrder(
+  order: readonly ColumnId[],
+  columns: readonly { id: ColumnId }[]
+): ColumnId[] {
+  const available = new Set(columns.map((column) => column.id));
+  const next = order.filter((id) => available.delete(id));
+  for (const column of columns) {
+    if (available.delete(column.id)) next.push(column.id);
+  }
+  return next;
 }
 
 export function DataGrid<T>(props: DataGridProps<T>) {
@@ -93,48 +60,94 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     getRowId,
     rowHeight = DEFAULT_ROW_HEIGHT,
     overscanRows = DEFAULT_OVERSCAN_ROWS,
-    overscanCols = DEFAULT_OVERSCAN_COLS,
+    overscanColumns = DEFAULT_OVERSCAN_COLS,
     enableRowSelection = false,
+    selectedRowIds,
+    defaultSelectedRowIds,
+    onSelectedRowIdsChange,
     onSelectionChange,
+    reorderable: reorderableProp = true,
     columnOrder: columnOrderProp,
+    defaultColumnOrder,
     onColumnOrderChange,
-    enableColumnResize = true,
-    onColumnResize,
+    resizable: resizableProp = true,
+    columnWidths,
+    defaultColumnWidths,
+    onColumnWidthsChange,
     onCellCommit,
     onCellCommitError,
-    editorClassName,
-    editorStyle,
+    id,
+    className,
+    style,
+    "aria-label": ariaLabel,
+    "aria-labelledby": ariaLabelledBy,
   } = props;
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [store] = useState(() => createGridStore());
+  const [store] = useState(() =>
+    createGridStore({ selectedRows: new Set(defaultSelectedRowIds) })
+  );
   const [editStore] = useState(() => createEditStore());
   const [pendingStore] = useState(() => createPendingStore());
   const [dragStore] = useState(() => createDragStore());
   const [resizeStore] = useState(() => createResizeStore());
 
-  // Reordering is controlled, so the callback also enables the drag gesture and affordance.
-  const reorderable = !!onColumnOrderChange;
+  const orderControlled = columnOrderProp !== undefined;
+  const [internalOrder, setInternalOrder] = useState<ColumnId[]>(() =>
+    reconcileColumnOrder(
+      defaultColumnOrder ?? columns.map((column) => column.id),
+      columns
+    )
+  );
+  const resolvedOrder = useMemo(
+    () =>
+      orderControlled
+        ? columnOrderProp
+        : reconcileColumnOrder(internalOrder, columns),
+    [orderControlled, columnOrderProp, internalOrder, columns]
+  );
+  const reorderable =
+    reorderableProp && (!orderControlled || onColumnOrderChange != null);
+  const commitOrder = (next: readonly ColumnId[]) => {
+    if (!orderControlled) setInternalOrder([...next]);
+    onColumnOrderChange?.(next);
+  };
 
-  // In-session width overrides are applied over each column's initial width.
-  const resizeEnabled = enableColumnResize;
+  const widthsControlled = columnWidths !== undefined;
   const [internalWidths, setInternalWidths] = useState<
     Record<ColumnId, number>
-  >({});
+  >(() => ({ ...defaultColumnWidths }));
+  const resolvedWidths = widthsControlled ? columnWidths : internalWidths;
+  const resizeEnabled =
+    resizableProp && (!widthsControlled || onColumnWidthsChange != null);
   const commitResize = (columnId: ColumnId, width: number) => {
-    setInternalWidths((prev) => ({ ...prev, [columnId]: width }));
-    onColumnResize?.(columnId, width);
+    const next = { ...resolvedWidths, [columnId]: width };
+    if (!widthsControlled) setInternalWidths(next);
+    onColumnWidthsChange?.(next);
   };
+
+  const rowIds = useMemo(
+    () => rows.map((row, index) => getRowId(row, index)),
+    [rows, getRowId]
+  );
+  const rowIndexById = useMemo(
+    () => new Map(rowIds.map((rowId, index) => [rowId, index])),
+    [rowIds]
+  );
+  const columnIds = useMemo(
+    () => new Set(columns.map((column) => column.id)),
+    [columns]
+  );
 
   // Layout owns pure geometry derivation and both virtualizers.
   const layout = useGridLayout({
     columns,
-    columnOrder: columnOrderProp,
-    widthOverrides: internalWidths,
+    columnOrder: resolvedOrder,
+    widthOverrides: resolvedWidths,
     rows,
     rowHeight,
     overscanRows,
-    overscanCols,
+    overscanCols: overscanColumns,
     enableRowSelection,
     scrollRef,
   });
@@ -158,6 +171,51 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     if (!onSelectionChange) return;
     return store.subscribe(() => onSelectionChange(store.getSnapshot()));
   }, [store, onSelectionChange]);
+
+  // Reconcile stable row identities and column ids without putting selection on the cell render
+  // path. Row reordering preserves focus/range; removed rows or columns clear invalid coordinates.
+  const previousRowIdsRef = useRef<readonly RowId[]>(rowIds);
+  useEffect(() => {
+    const previousRowIds = previousRowIdsRef.current;
+    const current = store.getSnapshot();
+    const mapCell = (cell: CellCoord | null): CellCoord | null => {
+      if (cell == null || !columnIds.has(cell.columnId)) return null;
+      const rowId = previousRowIds[cell.rowIndex];
+      const rowIndex = rowId == null ? undefined : rowIndexById.get(rowId);
+      return rowIndex == null ? null : { rowIndex, columnId: cell.columnId };
+    };
+    const focusedCell = mapCell(current.focusedCell);
+    const anchor = current.range ? mapCell(current.range.anchor) : null;
+    const focus = current.range ? mapCell(current.range.focus) : null;
+    const range = anchor && focus ? { anchor, focus } : null;
+    const sourceRows = selectedRowIds ?? current.selectedRows;
+    const selectedRows = new Set(
+      [...sourceRows].filter((rowId) => rowIndexById.has(rowId))
+    );
+    if (
+      !sameCell(focusedCell, current.focusedCell) ||
+      !sameCell(range?.anchor ?? null, current.range?.anchor ?? null) ||
+      !sameCell(range?.focus ?? null, current.range?.focus ?? null) ||
+      !sameSet(selectedRows, current.selectedRows)
+    ) {
+      store.setSelection({ focusedCell, range, selectedRows });
+    }
+    previousRowIdsRef.current = rowIds;
+  }, [columnIds, rowIds, rowIndexById, selectedRowIds, store]);
+
+  const updateSelectedRows = (next: ReadonlySet<RowId>) => {
+    const selectedRows = new Set(
+      [...next].filter((rowId) => rowIndexById.has(rowId))
+    );
+    onSelectedRowIdsChange?.(selectedRows);
+    if (selectedRowIds === undefined) {
+      store.setSelectedRows(selectedRows);
+    } else {
+      onSelectionChange?.({ ...store.getSnapshot(), selectedRows });
+    }
+  };
+  const rowSelectionReadOnly =
+    selectedRowIds !== undefined && onSelectedRowIdsChange == null;
 
   // Live-DOM geometry readers (hit-testing, per-zone layout, scroll-into-view) shared by the
   // interaction hooks below.
@@ -200,7 +258,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     scrollRef,
     layout,
     helpers,
-    onColumnOrderChange,
+    onColumnOrderChange: commitOrder,
   });
   // Resize gets first refusal because its narrow hit area overlaps the header drag area.
   const colResize = useColumnResize({
@@ -231,8 +289,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     scrollCellIntoView,
   });
 
-  const rowIdAt = (index: number) => getRowId(rows[index], index);
-  const getAllRowIds = () => rows.map((row, i) => getRowId(row, i));
+  const rowIdAt = (index: number) => rowIds[index];
 
   // Frozen zones render every column; the center list contains only virtualized columns. Folding the
   // scroll margin into `x` keeps GridZone independent of virtualization.
@@ -240,16 +297,21 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     col,
     x: left.offsets[i],
     width: left.widths[i],
+    columnIndex: layout.placementMap.get(col.id)?.visualIndex ?? i,
   }));
   const rightPlaced: PlacedCol<T>[] = zones.right.map((col, i) => ({
     col,
     x: right.offsets[i],
     width: right.widths[i],
+    columnIndex: layout.placementMap.get(col.id)?.visualIndex ?? i,
   }));
   const centerPlaced: PlacedCol<T>[] = vCols.map((vc) => ({
     col: zones.center[vc.index],
     x: vc.start - centerScrollMargin,
     width: vc.size,
+    columnIndex:
+      layout.placementMap.get(zones.center[vc.index].id)?.visualIndex ??
+      vc.index,
   }));
 
   const zoneProps = {
@@ -267,6 +329,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     pendingStore,
     resizeStore,
     geom,
+    rowIndexById,
   };
 
   // Flex places the right zone at the content edge required by `sticky; right: 0`. Sticky zones and
@@ -275,6 +338,10 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     <>
       <div
         ref={scrollRef}
+        id={id}
+        className={className}
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
         tabIndex={0}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -282,6 +349,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
         onLostPointerCapture={onLostPointerCapture}
         onKeyDown={onKeyDown}
         style={{
+          ...style,
           height: "100%",
           overflow: "auto",
           position: "relative",
@@ -305,7 +373,9 @@ export function DataGrid<T>(props: DataGridProps<T>) {
               rowCount={rows.length}
               bodyHeight={totalHeight}
               rowHeight={rowHeight}
-              getAllRowIds={getAllRowIds}
+              allRowIds={rowIds}
+              onSelectedRowIdsChange={updateSelectedRows}
+              disabled={rowSelectionReadOnly}
               strongDivider={left.total === 0}
             />
           )}
@@ -356,8 +426,6 @@ export function DataGrid<T>(props: DataGridProps<T>) {
         commitImplicit={commitImplicit}
         cancel={cancelEdit}
         commitAndMove={commitAndMove}
-        editorClassName={editorClassName}
-        editorStyle={editorStyle}
       />
     </>
   );
