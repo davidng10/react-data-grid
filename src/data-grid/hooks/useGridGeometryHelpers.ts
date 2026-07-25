@@ -151,29 +151,59 @@ export function useGridGeometryHelpers<T>(args: {
     const vpY = clientY - rect.top;
     if (vpY < 0 || vpY >= rowHeight) return null; // only the header strip
 
-    const r = resolveZone(clientX - rect.left, el.clientWidth, el.scrollLeft);
-    if (!r) return null;
-    const { cols, zl, zone, zoneX } = r;
-
-    // The pointer can sit just inside the column whose right edge it's near, or just past that
-    // boundary in the next column — so test the column containing zoneX and its left neighbour.
-    const i = colIndexAtX(zl.offsets, zoneX);
-    for (const c of [i, i - 1]) {
-      if (c < 0 || c >= cols.length) continue;
-      const boundaryX = zl.offsets[c] + zl.widths[c];
-      if (Math.abs(zoneX - boundaryX) <= RESIZE_HANDLE_WIDTH) {
-        const col = cols[c];
-        if (!col || !resolveColumnCapabilities(col).resizable) return null;
-        return {
-          columnId: col.id,
-          zone,
-          localIndex: c,
-          startWidth: zl.widths[c],
-          boundaryX,
-        };
+    const hitInZone = (
+      zone: Zone,
+      cols: Column<T>[],
+      zl: ZoneLayout,
+      zoneX: number
+    ) => {
+      // The pointer can sit just inside the column whose right edge it's near, or just past that
+      // boundary in the next column — so test the column containing zoneX and its left neighbour.
+      const i = colIndexAtX(zl.offsets, zoneX);
+      for (const c of [i, i - 1]) {
+        if (c < 0 || c >= cols.length) continue;
+        const boundaryX = zl.offsets[c] + zl.widths[c];
+        if (Math.abs(zoneX - boundaryX) <= RESIZE_HANDLE_WIDTH) {
+          const col = cols[c];
+          if (!col || !resolveColumnCapabilities(col).resizable) return null;
+          return {
+            columnId: col.id,
+            zone,
+            localIndex: c,
+            startWidth: zl.widths[c],
+            boundaryX,
+          };
+        }
       }
+      return null;
+    };
+
+    const localX = clientX - rect.left;
+
+    // Frozen zones render above the scrolling center. At their exact seams `resolveZone` assigns
+    // the point to the zone on the other side, so give the visible boundary first refusal.
+    if (left.total > 0 && Math.abs(localX - leftBand) <= RESIZE_HANDLE_WIDTH) {
+      const hit = hitInZone("left", zones.left, left, localX - gutterW);
+      if (hit) return hit;
     }
-    return null;
+
+    const rightBand = el.clientWidth - right.total;
+    if (
+      right.total > 0 &&
+      zones.center.length > 0 &&
+      Math.abs(localX - rightBand) <= RESIZE_HANDLE_WIDTH
+    ) {
+      const hit = hitInZone(
+        "center",
+        zones.center,
+        center,
+        localX - leftBand + el.scrollLeft
+      );
+      if (hit) return hit;
+    }
+
+    const r = resolveZone(localX, el.clientWidth, el.scrollLeft);
+    return r ? hitInZone(r.zone, r.cols, r.zl, r.zoneX) : null;
   };
 
   // The ZoneLayout for a zone (offsets/widths/total) — drives the drop-index geometry.

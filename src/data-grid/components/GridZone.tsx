@@ -27,6 +27,8 @@ export type PlacedCol<T> = {
   x: number;
   width: number;
   columnIndex: number;
+  /** The left edge continues the resize affordance for the resizable column before this one. */
+  resizeFromLeft: boolean;
 };
 
 // Renders one zone's header, cells, and interaction overlays. Only overlays subscribe to stores, so
@@ -136,6 +138,7 @@ export function GridZone<T>(props: {
               frozen={frozen}
               draggable={headerContext.reorderable}
               resizable={headerContext.resizable}
+              resizeFromLeft={resizeEnabled && pc.resizeFromLeft}
             />
           );
         })}

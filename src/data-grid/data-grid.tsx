@@ -15,6 +15,7 @@ import { useDragSelect } from "./hooks/useDragSelect";
 import { useGridGeometryHelpers } from "./hooks/useGridGeometryHelpers";
 import { useGridKeyboard } from "./hooks/useGridKeyboard";
 import { useGridLayout } from "./hooks/useGridLayout";
+import { resolveColumnCapabilities } from "./internal/column-capabilities";
 import {
   DEFAULT_OVERSCAN_COLS,
   DEFAULT_OVERSCAN_ROWS,
@@ -298,12 +299,16 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     x: left.offsets[i],
     width: left.widths[i],
     columnIndex: layout.placementMap.get(col.id)?.visualIndex ?? i,
+    resizeFromLeft:
+      i > 0 && resolveColumnCapabilities(zones.left[i - 1]).resizable,
   }));
   const rightPlaced: PlacedCol<T>[] = zones.right.map((col, i) => ({
     col,
     x: right.offsets[i],
     width: right.widths[i],
     columnIndex: layout.placementMap.get(col.id)?.visualIndex ?? i,
+    resizeFromLeft:
+      i > 0 && resolveColumnCapabilities(zones.right[i - 1]).resizable,
   }));
   const centerPlaced: PlacedCol<T>[] = vCols.map((vc) => ({
     col: zones.center[vc.index],
@@ -312,6 +317,11 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     columnIndex:
       layout.placementMap.get(zones.center[vc.index].id)?.visualIndex ??
       vc.index,
+    resizeFromLeft:
+      vc.index > 0
+        ? resolveColumnCapabilities(zones.center[vc.index - 1]).resizable
+        : leftPlaced.length > 0 &&
+          resolveColumnCapabilities(leftPlaced.at(-1)!.col).resizable,
   }));
 
   const zoneProps = {

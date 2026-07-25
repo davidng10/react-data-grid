@@ -35,6 +35,6 @@ export const DRAG_THRESHOLD = 4;
 export const DROP_LINE_COLOR = "#2563eb";
 
 // Resize hit area, minimum width, and guide color.
-export const RESIZE_HANDLE_WIDTH = 6;
+export const RESIZE_HANDLE_WIDTH = 5;
 export const MIN_COL_WIDTH = 48;
 export const RESIZE_LINE_COLOR = "#2563eb";

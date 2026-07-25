@@ -16,8 +16,19 @@ export const HeaderCell = memo(function HeaderCell(props: {
   draggable?: boolean;
   /** Show the resize handle at the right edge. */
   resizable?: boolean;
+  /** Continue the previous column's resize cursor into this cell's left edge. */
+  resizeFromLeft?: boolean;
 }) {
-  const { content, x, width, height, frozen, draggable, resizable } = props;
+  const {
+    content,
+    x,
+    width,
+    height,
+    frozen,
+    draggable,
+    resizable,
+    resizeFromLeft,
+  } = props;
   return (
     <div
       data-frozen={frozen}
@@ -34,11 +45,25 @@ export const HeaderCell = memo(function HeaderCell(props: {
       }}
     >
       {content}
-      {/* Resize handle — a hover affordance only; the gesture is driven by the container's
-          pointerdown via `headerResizeHitTest` (which matches a slightly wider band than this strip,
-          symmetric around the boundary), so this purely supplies the `col-resize` cursor. */}
+      {/* These are hover affordances only; the container hit-tests symmetrically around the
+          boundary and keeps resize ownership with the column on its left. */}
+      {resizeFromLeft && (
+        <div
+          data-resize-handle="left"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: RESIZE_HANDLE_WIDTH,
+            height,
+            cursor: "col-resize",
+            zIndex: 1,
+          }}
+        />
+      )}
       {resizable && (
         <div
+          data-resize-handle="right"
           style={{
             position: "absolute",
             top: 0,

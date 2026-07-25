@@ -41,7 +41,7 @@ export function useColumnResize<T>(args: {
     maxWidth: number;
     /** clientX at pointerdown — the drag origin. */
     originX: number;
-    /** The live (clamped) width, read on pointerup to commit. */
+    /** Last width shown by the guide; fallback for an anomalous release or lost capture. */
     width: number;
   } | null>(null);
 
@@ -94,19 +94,34 @@ export function useColumnResize<T>(args: {
     scrollRef.current?.releasePointerCapture(e.pointerId);
     if (scrollRef.current) scrollRef.current.style.cursor = "";
     resizeStore.end();
+    // The release may carry a newer position than the last pointermove (e.g. coalesced touchpad
+    // input), so derive the committed width from pointerup rather than a cached move position.
+    const width = clampNum(
+      src.startWidth + (e.clientX - src.originX),
+      src.minWidth,
+      src.maxWidth
+    );
+    // Some trackpad/browser combinations occasionally report the down position again on a light
+    // release. If the guide visibly moved, keep that last valid position instead of snapping back.
+    const committedWidth =
+      width === src.startWidth && src.width !== src.startWidth
+        ? src.width
+        : width;
     // Commit once, only if the width actually changed (a bare click on the handle is a no-op).
-    if (src.width !== src.startWidth) onCommit(src.columnId, src.width);
+    if (committedWidth !== src.startWidth)
+      onCommit(src.columnId, committedWidth);
     return true;
   };
 
-  // Safety net mirroring the reorder gesture: a pointercancel / OS-stolen pointer must not leave the
-  // `col-resize` cursor or the resize state stuck. Idempotent on the normal release path.
+  // A normal pointerup clears sourceRef before capture is released. If capture disappears first,
+  // preserve the last width the guide showed rather than silently discarding the resize.
   const onLostPointerCapture = () => {
     if (scrollRef.current) scrollRef.current.style.cursor = "";
-    if (sourceRef.current) {
-      sourceRef.current = null;
-      resizeStore.end();
-    }
+    const src = sourceRef.current;
+    if (!src) return;
+    sourceRef.current = null;
+    resizeStore.end();
+    if (src.width !== src.startWidth) onCommit(src.columnId, src.width);
   };
 
   return { onPointerDown, onPointerMove, onPointerUp, onLostPointerCapture };

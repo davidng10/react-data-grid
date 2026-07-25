@@ -269,6 +269,46 @@ describe("column resize", () => {
     expect(onColumnWidthsChange).toHaveBeenCalledWith({ c0: 150 });
   });
 
+  it("uses the release position when it is newer than the last pointer move", () => {
+    const onColumnWidthsChange = vi.fn();
+    const { scroller } = renderGrid({ onColumnWidthsChange });
+
+    down(scroller, 100, 16);
+    move(scroller, 120, 16); // last delivered move
+    up(scroller, 150, 16); // touchpad/browser reports the final position only on release
+
+    expect(onColumnWidthsChange).toHaveBeenCalledTimes(1);
+    expect(onColumnWidthsChange).toHaveBeenCalledWith({ c0: 150 });
+  });
+
+  it("keeps the last visible width when release reports the drag origin", () => {
+    const onColumnWidthsChange = vi.fn();
+    const { scroller } = renderGrid({ onColumnWidthsChange });
+
+    down(scroller, 100, 16);
+    move(scroller, 150, 16); // guide visibly reaches 150
+    up(scroller, 100, 16); // anomalous light touchpad release reports the origin
+
+    expect(onColumnWidthsChange).toHaveBeenCalledTimes(1);
+    expect(onColumnWidthsChange).toHaveBeenCalledWith({ c0: 150 });
+  });
+
+  it("keeps the last visible width when pointer capture is lost before release", () => {
+    const onColumnWidthsChange = vi.fn();
+    const { scroller } = renderGrid({ onColumnWidthsChange });
+
+    down(scroller, 100, 16);
+    move(scroller, 150, 16);
+    fireEvent.lostPointerCapture(scroller);
+
+    expect(scroller.style.cursor).toBe("");
+    expect(onColumnWidthsChange).toHaveBeenCalledTimes(1);
+    expect(onColumnWidthsChange).toHaveBeenCalledWith({ c0: 150 });
+
+    up(scroller, 150, 16); // late release must not commit a second time
+    expect(onColumnWidthsChange).toHaveBeenCalledTimes(1);
+  });
+
   it("clamps the committed width to the column maxWidth", () => {
     const onColumnWidthsChange = vi.fn();
     const cols: Column<Row>[] = [
@@ -305,6 +345,39 @@ describe("column resize", () => {
     expect(onColumnWidthsChange).not.toHaveBeenCalled();
   });
 
+  it("does not start resizing six pixels away from a column boundary", () => {
+    const onColumnWidthsChange = vi.fn();
+    const { scroller } = renderGrid({
+      reorderable: false,
+      onColumnWidthsChange,
+    });
+
+    down(scroller, 94, 16); // outside the 5px resize boundary at x=100
+    move(scroller, 150, 16);
+    up(scroller, 150, 16);
+
+    expect(onColumnWidthsChange).not.toHaveBeenCalled();
+  });
+
+  it("shows the resize cursor on both sides of a column boundary", () => {
+    renderGrid();
+
+    const leftHeader = screen.getByText("C0");
+    const rightHeader = screen.getByText("C1");
+    expect(
+      leftHeader.querySelector('[data-resize-handle="right"]')
+    ).toHaveStyle({
+      width: "5px",
+      cursor: "col-resize",
+    });
+    expect(
+      rightHeader.querySelector('[data-resize-handle="left"]')
+    ).toHaveStyle({
+      width: "5px",
+      cursor: "col-resize",
+    });
+  });
+
   it("resize wins over reorder at a column boundary", () => {
     const onColumnWidthsChange = vi.fn();
     const onColumnOrderChange = vi.fn();
@@ -318,6 +391,66 @@ describe("column resize", () => {
     up(scroller, 160, 16);
 
     expect(onColumnWidthsChange).toHaveBeenCalledWith({ c0: 160 });
+    expect(onColumnOrderChange).not.toHaveBeenCalled();
+  });
+
+  it("resize wins over reorder at the frozen-left/center seam", () => {
+    const onColumnWidthsChange = vi.fn();
+    const onColumnOrderChange = vi.fn();
+    const cols: Column<Row>[] = [
+      {
+        id: "c0",
+        name: "C0",
+        width: 100,
+        frozen: "left",
+        accessor: (r) => r.v,
+      },
+      { id: "c1", name: "C1", width: 100, accessor: (r) => r.v },
+      { id: "c2", name: "C2", width: 100, accessor: (r) => r.v },
+    ];
+    const { scroller } = renderGrid({
+      columns: cols,
+      onColumnWidthsChange,
+      onColumnOrderChange,
+    });
+
+    down(scroller, 100, 16); // exact seam: c0 right edge and center zone start
+    move(scroller, 150, 16);
+    up(scroller, 150, 16);
+
+    expect(onColumnWidthsChange).toHaveBeenCalledWith({ c0: 150 });
+    expect(onColumnOrderChange).not.toHaveBeenCalled();
+  });
+
+  it("resize wins over reorder at the center/frozen-right seam", () => {
+    const onColumnWidthsChange = vi.fn();
+    const onColumnOrderChange = vi.fn();
+    const cols: Column<Row>[] = [
+      ...Array.from({ length: 9 }, (_, i) => ({
+        id: `c${i}`,
+        name: `C${i}`,
+        width: 100,
+        accessor: (r: Row) => r.v,
+      })),
+      {
+        id: "right",
+        name: "Right",
+        width: 100,
+        frozen: "right" as const,
+        accessor: (r: Row) => r.v,
+      },
+    ];
+    const { scroller } = renderGrid({
+      columns: cols,
+      onColumnWidthsChange,
+      onColumnOrderChange,
+    });
+
+    down(scroller, 900, 16); // exact seam: c8 right edge and frozen-right zone start
+    move(scroller, 950, 16);
+    up(scroller, 950, 16);
+
+    expect(onColumnWidthsChange).toHaveBeenCalledWith({ c8: 150 });
     expect(onColumnOrderChange).not.toHaveBeenCalled();
   });
 

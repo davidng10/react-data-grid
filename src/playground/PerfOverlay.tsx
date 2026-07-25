@@ -3,9 +3,9 @@ import { useFps } from "./useFps";
 interface PerfOverlayProps {
   /** Polled each meter render (~4 Hz) so scroll never drives parent setState (D1). */
   getStats?: () => {
-    rows: number;
-    cols: number;
-    renderedCells: number;
+    rows?: number;
+    cols?: number;
+    renderedCells?: number;
   } | null;
 }
 
