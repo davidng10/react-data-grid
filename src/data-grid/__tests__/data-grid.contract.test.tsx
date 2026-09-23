@@ -68,9 +68,10 @@ describe("Phase 1 public contract", () => {
       "aria-labelledby": "grid-title",
     });
 
-    expect(scroller).toHaveAttribute("id", "people-grid");
-    expect(scroller).toHaveClass("custom-grid");
-    expect(scroller).toHaveStyle({ backgroundColor: "rgb(1, 2, 3)" });
+    const frame = document.getElementById("people-grid");
+    expect(frame).toContainElement(scroller);
+    expect(frame).toHaveClass("custom-grid");
+    expect(frame).toHaveStyle({ backgroundColor: "rgb(1, 2, 3)" });
     expect(scroller).toHaveAttribute("aria-label", "People");
     expect(scroller).toHaveAttribute("aria-labelledby", "grid-title");
   });

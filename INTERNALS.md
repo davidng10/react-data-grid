@@ -24,12 +24,14 @@ The grid uses one native scroll container. A flex row contains the optional chec
 three column zones:
 
 ```text
-scroll container
-└── flex body
-    ├── row gutter       sticky left
-    ├── left zone        sticky left
-    ├── center zone      horizontally virtualized
-    └── right zone       sticky right
+stationary frame
+├── scroll container    isolated stacking context
+│   └── flex body
+│       ├── row gutter       sticky left
+│       ├── left zone        sticky left
+│       ├── center zone      horizontally virtualized
+│       └── right zone       sticky right
+└── status layers       empty content / initial skeleton / refresh overlay
 ```
 
 Each zone owns a sticky header. Frozen zones remain opaque and render above the center zone so
@@ -38,6 +40,17 @@ scrolling cells cannot show through them.
 Rows have a uniform height and are vertically virtualized. Only center columns are horizontally
 virtualized; frozen columns are expected to remain a small set and are always rendered for each
 visible row. Cells are absolutely positioned with transforms inside their zone.
+
+The frame owns public id/className/style and stable viewport presentation. The inner scroller owns
+scrollRef, accessible naming, and keyboard focus. A refresh overlay covers headers and frozen zones
+without entering their scroll coordinates. Initial skeletons fill the visible body without adding
+fake rows. `DataGrid` records whether supplied rows are available, then normalizes null/undefined to
+a shared empty array; internal hooks and row renderers retain their array/nonnullable-row contracts.
+
+Loading uses inert content plus capture guards, including React events bubbling from the body
+editor portal. A layout effect cancels gestures and releases pointer capture. Resize has a separate
+cancel operation because its normal lost-capture behavior commits the last visible guide width.
+Keep network loading independent of `EmptyRowsLayer` behind virtualized cells.
 
 ## Coordinate spaces
 
@@ -111,6 +124,13 @@ the component.
 
 Custom editor popups must render inside the editor host. A popup mounted elsewhere is treated as an
 outside click and implicitly commits the edit.
+
+Active edit snapshots retain stable row identity. Resolvers use the current row-index map so a fetch
+or reorder cannot redirect a draft to a different row. Callbacks exposed to custom editors delegate
+through the latest committed editing API, including callbacks retained across a refresh. Loading
+hides and disables the portal without clearing its draft or starting a commit; pending commits
+continue independently. Missing targets retain the draft with an explicit discard notice. Focus
+restoration respects any intervening move to an outside control.
 
 ## Performance constraints
 

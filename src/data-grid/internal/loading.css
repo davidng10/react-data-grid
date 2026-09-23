@@ -1,0 +1,104 @@
+.rdg-loading-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  cursor: default;
+  border-radius: inherit;
+  touch-action: none;
+}
+
+.rdg-loading-layer[data-grid-state="refreshing"] {
+  background: var(--rdg-loading-overlay-background, rgb(255 255 255 / 65%));
+}
+
+.rdg-loading-body,
+.rdg-empty-content {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.rdg-empty-content,
+.rdg-loading-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.rdg-empty-content {
+  z-index: 1;
+  padding: 16px;
+  color: var(--rdg-empty-color, #78716c);
+  font:
+    13px/1.5 system-ui,
+    sans-serif;
+}
+
+.rdg-loading-indicator {
+  width: 100%;
+  height: 100%;
+  color: var(--rdg-loading-indicator-color, #57534e);
+}
+
+.rdg-loading-spinner {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: rdg-loading-spin 800ms linear infinite;
+}
+
+/* Only the initial-load bars pulse. The opaque backing and virtualization-gap fallback stay still. */
+.rdg-loading-layer[data-grid-state="initial-loading"] .rdg-skeleton-bars {
+  filter: brightness(0.94);
+  animation: rdg-skeleton-pulse 1600ms ease-in-out infinite;
+}
+
+.rdg-status-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.rdg-draft-notice {
+  position: absolute;
+  inset: auto 8px 8px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #d6d3d1;
+  border-radius: 4px;
+  background: #fff;
+  color: #44403c;
+  font:
+    13px/1.5 system-ui,
+    sans-serif;
+}
+
+@keyframes rdg-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes rdg-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}

@@ -60,6 +60,7 @@ export const EmptyRowsLayer = memo(function EmptyRowsLayer({
       }}
     >
       <div
+        className="rdg-skeleton-bars"
         style={{
           position: "absolute",
           top: 0,

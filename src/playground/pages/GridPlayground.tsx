@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Button, Select } from "antd";
+import { Link } from "react-router";
 
 import { DataGrid } from "../../data-grid";
 import { ControlPanel } from "../ControlPanel";
@@ -184,6 +185,9 @@ export function GridPlayground() {
         }}
       >
         <strong style={{ fontSize: 14 }}>Data grid</strong>
+        <Link to="/loading" style={{ fontSize: 12, color: "#57534e" }}>
+          Loading demo
+        </Link>
         <span
           style={{
             fontSize: 11,
