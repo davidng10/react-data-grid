@@ -38,7 +38,13 @@ const COLUMNS: Column<Person>[] = [
   { id: "team", name: "Team", width: 180, accessor: (r) => r.team },
   { id: "location", name: "Location", width: 180, accessor: (r) => r.location },
   { id: "email", name: "Email", width: 250, accessor: (r) => r.email },
-  { id: "id", name: "Member ID", width: 140, accessor: (r) => r.id },
+  {
+    id: "id",
+    name: "Member ID",
+    // The final unspecified column fills the space before the fixed-width Status column.
+    accessor: (r) =>
+      `MEMBER-${String(r.id).padStart(6, "0")}-APAC-SINGAPORE-ENTERPRISE-2026-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789`,
+  },
   {
     id: "status",
     name: "Status",
