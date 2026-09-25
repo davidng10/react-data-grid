@@ -2,17 +2,20 @@
 // cannot clip it. The host is repositioned imperatively during scrolling to avoid cell re-renders.
 
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 
 import { cellViewportRect } from "../core/selection/geometry";
+import { useEditorTheme } from "../hooks/useEditorTheme";
 import { FloatingTextEditor, NativeSelectEditor } from "./FloatingTextEditor";
 
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import type {
   Direction,
   GridGeometry,
@@ -21,31 +24,8 @@ import type {
 import type { EditStore } from "../core/store/edit-store";
 import type { CellEditContext, Column, EditStatus, RowId } from "../core/types";
 
-// Positioning is owned by the grid — these always win. (transform + visibility are written
-// imperatively in `place`, never via React, so they survive this leaf's scroll re-renders.)
-const HOST_POSITION: CSSProperties = {
-  position: "fixed",
-  top: -2,
-  left: -2,
-};
-
-// The default visual frame for the editor "panel". This is what the integrator restyles via
-// The default editors fill this frame transparently; a custom `renderEditor` should too (e.g. AntD
-// `borderless`), so every editor — default or custom — shares one consistently-styled panel.
-const HOST_FRAME: CSSProperties = {
-  zIndex: 1000,
-  borderRadius: 4,
-  background: "#fff",
-  boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
-};
-
-// Synchronous validation keeps the editor open, so the same grid-owned frame becomes the error
-// indicator. Keep the complete border shorthand present in both states: adding/removing only the
-// `borderColor` longhand makes the browser fall back to `currentColor` (black) when the error clears.
-const HOST_EDITING_BORDER = "1px solid #2563eb";
-const HOST_ERROR_BORDER = "1px solid #dc2626";
-
 export interface EditorPortalProps<T> {
+  frameRef: RefObject<HTMLDivElement | null>;
   loading: boolean;
   editStore: EditStore;
   scrollRef: { current: HTMLDivElement | null };
@@ -102,6 +82,13 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
       ? null
       : { ...edit.cell, rowIndex: editRowIndex };
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
+  const attachHost = useCallback((element: HTMLDivElement | null) => {
+    hostRef.current = element;
+    setHost(element);
+  }, []);
+  // Hidden text has no measurable scroll height; resnapshot and measure on resume.
+  useEditorTheme(props.frameRef, loading ? null : host);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   // Remember editor focus across display:none. External focus always wins over restoration.
   useLayoutEffect(() => {
@@ -243,12 +230,12 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
   if (!column || row == null || !cell) {
     if (loading) return null;
     return (
-      <div className="rdg-draft-notice" role="status">
+      <div className="dgr-draft-notice" role="status">
         <span>
           The edited cell is unavailable. Your draft is preserved until it
           returns.
         </span>
-        <button type="button" onClick={cancel}>
+        <button className="dgr-draft-discard" type="button" onClick={cancel}>
           Discard draft
         </button>
       </div>
@@ -305,16 +292,12 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
 
   return createPortal(
     <div
-      ref={hostRef}
+      className="dgr-editor-host"
+      ref={attachHost}
       onFocusCapture={(event) => {
         restoreFocusRef.current = event.target as HTMLElement;
       }}
-      style={{
-        ...HOST_FRAME,
-        border: hasError ? HOST_ERROR_BORDER : HOST_EDITING_BORDER,
-        ...HOST_POSITION,
-        display: loading ? "none" : undefined,
-      }}
+      style={{ display: loading ? "none" : undefined }}
       inert={loading || undefined}
       aria-hidden={loading || undefined}
       data-editing=""

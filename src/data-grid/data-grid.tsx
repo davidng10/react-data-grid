@@ -1,3 +1,5 @@
+import "./internal/grid.css";
+
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { GridStatusLayer } from "./components/GridStatusLayer";
@@ -16,6 +18,7 @@ import { useDragSelect } from "./hooks/useDragSelect";
 import { useGridGeometryHelpers } from "./hooks/useGridGeometryHelpers";
 import { useGridKeyboard } from "./hooks/useGridKeyboard";
 import { useGridLayout } from "./hooks/useGridLayout";
+import { classNames } from "./internal/class-names";
 import { resolveColumnCapabilities } from "./internal/column-capabilities";
 import {
   DEFAULT_OVERSCAN_COLS,
@@ -95,6 +98,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   const hasResult = suppliedRows != null;
   const rows = suppliedRows ?? EMPTY_ROWS;
 
+  const frameRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [store] = useState(() =>
     createGridStore({ selectedRows: new Set(defaultSelectedRowIds) })
@@ -390,8 +394,9 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   // headers then follow the native scroll without JavaScript synchronization.
   return (
     <div
+      ref={frameRef}
       id={id}
-      className={className}
+      className={classNames("dgr-root", className)}
       data-grid-frame=""
       onClickCapture={blockWhileLoading}
       onDoubleClickCapture={blockWhileLoading}
@@ -403,16 +408,15 @@ export function DataGrid<T>(props: DataGridProps<T>) {
         if (event.key !== "Tab") blockWhileLoading(event);
       }}
       style={{
-        height: "100%",
-        minWidth: 0,
-        minHeight: 0,
         ...style,
         position: "relative",
         isolation: "isolate",
+        boxSizing: "border-box",
       }}
     >
       <div
         ref={scrollRef}
+        className="dgr-scroller"
         data-grid-scroller=""
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy}
@@ -430,23 +434,12 @@ export function DataGrid<T>(props: DataGridProps<T>) {
         }}
         onLostPointerCapture={onLostPointerCapture}
         onKeyDown={onKeyDown}
-        style={{
-          width: "100%",
-          height: "100%",
-          overflow: "auto",
-          position: "relative",
-          zIndex: 0,
-          borderRadius: "inherit",
-          outline: "none",
-          userSelect: "none",
-        }}
       >
         <div
+          className="dgr-content"
           style={{
-            display: "flex",
             width: totalWidth,
             height: rowHeight + totalHeight,
-            position: "relative",
           }}
         >
           {enableRowSelection && (
@@ -506,6 +499,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
       {/* The body portal escapes the scroll clip. Only this leaf
           subscribes to the edit store; the windowed body above never re-renders on edit. */}
       <EditorPortal
+        frameRef={frameRef}
         loading={loading}
         editStore={editStore}
         scrollRef={scrollRef}

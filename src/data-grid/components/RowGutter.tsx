@@ -1,15 +1,8 @@
 import { useSyncExternalStore } from "react";
 
-import {
-  FROZEN_BG,
-  GUTTER_WIDTH,
-  HEADER_BG,
-  HEADER_BORDER,
-} from "../internal/constants";
-import { FREEZE_DIVIDER_LEFT } from "../internal/style";
+import { GUTTER_WIDTH } from "../internal/constants";
 
 import type { VirtualItem } from "@tanstack/react-virtual";
-import type { CSSProperties } from "react";
 import type { GridStore } from "../core/store/grid-store";
 import type { RowId } from "../core/types";
 
@@ -45,45 +38,15 @@ export function RowGutter(props: {
   const allChecked = rowCount > 0 && selectedCount >= rowCount;
   const someChecked = selectedCount > 0 && !allChecked;
 
-  const cellStyle: CSSProperties = {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: GUTTER_WIDTH,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRight: "1px solid #e7e5e4",
-    borderBottom: "1px solid #f0efee",
-    boxSizing: "border-box",
-  };
-
   return (
     <div
-      style={{
-        flex: `0 0 ${GUTTER_WIDTH}px`,
-        position: "sticky",
-        left: 0,
-        zIndex: 3,
-        ...(strongDivider ? FREEZE_DIVIDER_LEFT : null),
-      }}
+      className="dgr-row-gutter"
+      data-divider={strongDivider || undefined}
+      style={{ flex: `0 0 ${GUTTER_WIDTH}px` }}
     >
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 1,
-          height: rowHeight,
-          background: HEADER_BG,
-          borderBottom: HEADER_BORDER,
-          borderRight: "1px solid #e7e5e4",
-          boxSizing: "border-box",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
+      <div className="dgr-gutter-header" style={{ height: rowHeight }}>
         <input
+          className="dgr-checkbox"
           type="checkbox"
           aria-label="Select all rows"
           disabled={disabled}
@@ -102,25 +65,21 @@ export function RowGutter(props: {
           }}
         />
       </div>
-      <div
-        style={{
-          position: "relative",
-          height: bodyHeight,
-          background: FROZEN_BG,
-        }}
-      >
+      <div className="dgr-body" style={{ height: bodyHeight }}>
         {vRows.map((vr) => {
           const rowId = rowIdAt(vr.index);
           return (
             <div
+              className="dgr-gutter-cell"
               key={vr.key}
               style={{
-                ...cellStyle,
+                width: GUTTER_WIDTH,
                 height: vr.size,
                 transform: `translateY(${vr.start}px)`,
               }}
             >
               <input
+                className="dgr-checkbox"
                 type="checkbox"
                 aria-label={`Select row ${vr.index + 1}`}
                 disabled={disabled}

@@ -11,34 +11,26 @@ import type { GridGeometry, Zone, ZoneRect } from "../core/selection/geometry";
 import type { PendingStore } from "../core/store/pending-store";
 import type { RowId } from "../core/types";
 
-const PENDING_BG = "#ffffff";
-const PENDING_FG = "#78716c";
-const ERROR_BORDER = "#dc2626";
-const ERROR_FILL = "rgba(220, 38, 38, 0.10)";
-// The body cell's grid lines (right + bottom). The opaque pending box covers the cell, so it must
-// repaint them or the saving cell looks borderless. Matches `cellBase` in data-grid.tsx.
-const GRID_LINE = "1px solid #f0efee";
-
 function Spinner() {
   return (
     <svg
+      className="dgr-pending-spinner"
       width="12"
       height="12"
       viewBox="0 0 24 24"
-      style={{ flex: "none", marginLeft: 6 }}
     >
       <circle
         cx="12"
         cy="12"
         r="9"
         fill="none"
-        stroke="#e7e5e4"
+        className="dgr-pending-track"
         strokeWidth="3"
       />
       <path
         d="M12 3 a9 9 0 0 1 9 9"
         fill="none"
-        stroke="#2563eb"
+        className="dgr-pending-stroke"
         strokeWidth="3"
         strokeLinecap="round"
       >
@@ -55,40 +47,17 @@ function Spinner() {
   );
 }
 
-const boxBase = (r: ZoneRect): CSSProperties => ({
-  position: "absolute",
-  left: 0,
-  top: 0,
+const rectStyle = (r: ZoneRect): CSSProperties => ({
   width: r.width,
   height: r.height,
   transform: `translate(${r.x}px, ${r.y}px)`,
-  boxSizing: "border-box",
 });
 
 function PendingBox(props: { rect: ZoneRect; value: unknown }) {
   const { rect, value } = props;
   return (
-    <div
-      style={{
-        ...boxBase(rect),
-        background: PENDING_BG,
-        borderRight: GRID_LINE,
-        borderBottom: GRID_LINE,
-        display: "flex",
-        alignItems: "center",
-        padding: "0 10px",
-        font: "13px/1 system-ui, sans-serif",
-        color: PENDING_FG,
-      }}
-    >
-      <span
-        style={{
-          flex: 1,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
+    <div className="dgr-pending-cell" style={rectStyle(rect)}>
+      <span className="dgr-pending-value">
         {value == null ? "" : String(value)}
       </span>
       <Spinner />
@@ -116,15 +85,7 @@ function ErrorFlash(props: { rect: ZoneRect }) {
     return () => anim.cancel();
   }, []);
   return (
-    <div
-      ref={ref}
-      style={{
-        ...boxBase(props.rect),
-        border: `1px solid ${ERROR_BORDER}`,
-        background: ERROR_FILL,
-        borderRadius: 1,
-      }}
-    />
+    <div className="dgr-error-cell" ref={ref} style={rectStyle(props.rect)} />
   );
 }
 
@@ -157,7 +118,7 @@ export const PendingOverlay = memo(function PendingOverlay(props: {
   if (items.length === 0) return null;
 
   return (
-    <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+    <div className="dgr-overlay">
       {items.map((it) =>
         it.status === "error" ? (
           <ErrorFlash key={it.key} rect={it.rect} />

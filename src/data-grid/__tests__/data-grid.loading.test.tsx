@@ -76,7 +76,7 @@ describe("loading display", () => {
         container.querySelector('[data-grid-state="initial-loading"]')
       ).toBeInTheDocument();
       expect(
-        container.querySelector(".rdg-loading-spinner")
+        container.querySelector(".dgr-loading-spinner")
       ).not.toBeInTheDocument();
       expect(identify).not.toHaveBeenCalled();
       expect(read).not.toHaveBeenCalled();
@@ -101,7 +101,7 @@ describe("loading display", () => {
     expect(
       container.querySelector('[data-grid-state="refreshing"]')
     ).toBeInTheDocument();
-    expect(container.querySelector(".rdg-loading-spinner")).toBeInTheDocument();
+    expect(container.querySelector(".dgr-loading-spinner")).toBeInTheDocument();
     update({ rows: [] });
     expect(screen.getByText("No rows")).toBeInTheDocument();
     expect(
@@ -126,7 +126,7 @@ describe("loading display", () => {
     expect(screen.getByText("Nothing matches")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Updating people");
     expect(
-      container.querySelector(".rdg-loading-spinner")
+      container.querySelector(".dgr-loading-spinner")
     ).not.toBeInTheDocument();
     update({ loadingIndicator: null, emptyContent: null });
     expect(screen.queryByText("Fetching")).not.toBeInTheDocument();
@@ -390,3 +390,54 @@ describe("loading interactions", () => {
     expect(commit).toHaveBeenCalledTimes(1);
   });
 });
+
+it("remounts a suspended draft with its current grid theme", () => {
+  const { scroller, update } = setup({
+    style: { "--dgr-background": "black" } as React.CSSProperties,
+  });
+  edit(scroller);
+  expect(
+    document
+      .querySelector<HTMLElement>(".dgr-editor-host")
+      ?.style.getPropertyValue("--dgr-background")
+  ).toBe("black");
+  update({ rows: null, loading: true });
+  expect(document.querySelector(".dgr-editor-host")).toBeNull();
+  update({
+    rows: ROWS,
+    loading: false,
+    style: { "--dgr-background": "navy" } as React.CSSProperties,
+  });
+  expect(screen.getByRole("textbox")).toHaveValue("draft");
+  expect(
+    document
+      .querySelector<HTMLElement>(".dgr-editor-host")
+      ?.style.getPropertyValue("--dgr-background")
+  ).toBe("navy");
+});
+
+it.each([13, 17])(
+  "remeasures a long draft when a %ipx theme resumes from a hidden refresh",
+  async (fontSize) => {
+    const measured = vi
+      .spyOn(HTMLTextAreaElement.prototype, "scrollHeight", "get")
+      .mockImplementation(function (this: HTMLTextAreaElement) {
+        if (this.parentElement?.style.display === "none") return 0;
+        return this.parentElement?.style.fontSize === "17px" ? 80 : 64;
+      });
+    try {
+      const { scroller, update } = setup({ style: { fontSize: 13 } });
+      edit(scroller);
+      const textarea = screen.getByRole("textbox");
+      update({ loading: true, rowHeight: 44, style: { fontSize } });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      });
+      update({ loading: false });
+      expect(textarea).toHaveValue("draft");
+      expect(textarea.style.height).toBe(fontSize === 17 ? "80px" : "64px");
+    } finally {
+      measured.mockRestore();
+    }
+  }
+);

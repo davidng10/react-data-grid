@@ -1,7 +1,5 @@
 import { memo, useSyncExternalStore } from "react";
 
-import { RESIZE_LINE_COLOR } from "../internal/constants";
-
 import type { Zone } from "../core/selection/geometry";
 import type { ResizeStore } from "../core/store/resize-store";
 
@@ -20,16 +18,10 @@ export const ResizeOverlay = memo(function ResizeOverlay(props: {
   if (resize.status !== "resizing" || resize.zone !== zone) return null;
   return (
     <div
+      className="dgr-resize-indicator"
       style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        width: 2,
         height,
         transform: `translateX(${resize.indicatorX - 1}px)`,
-        background: RESIZE_LINE_COLOR,
-        zIndex: 3,
-        pointerEvents: "none",
       }}
     />
   );

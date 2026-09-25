@@ -143,3 +143,24 @@ restoration respects any intervening move to an outside control.
 
 Run `npm test`, `npm run lint`, and `npm run build` after changes. Geometry and store behavior should
 remain covered by DOM-free unit tests.
+
+## Styling boundaries
+
+`internal/grid.css` and `internal/loading.css` own static layout and visual defaults on grid-owned
+classes. Structural rules use normal class specificity; visual defaults use `:where()` where possible.
+Inline styles retain calculated positions, dimensions, shared hit-area widths, generated mask geometry,
+and runtime state. The root also keeps position, isolation, and box sizing inline after consumer styles
+to preserve its mandatory overrides. Explicit box sizing protects measured cells and headers without
+a host reset. Frozen divider shadows cost no layout width. Skeletons repeat three alpha-mask tiles
+over a CSS-colored backing, with constant
+DOM size regardless of row count; SVG data URLs cannot inherit page CSS variables.
+
+`GridZone` builds one cell context/accessor result for both the class callback and renderer. Only
+resolved class strings reach memoized cell leaves. Selection and focus remain overlay subscriptions.
+
+`useEditorTheme` runs only in the editor leaf. It copies the allowlist in `internal/theme.ts`, plus
+computed base typography/direction, from a separate outer-frame ref. It observes root/ancestor theme
+attributes and listens for resize/system-color-scheme changes, coalescing reads without polling.
+Cleanup cancels queued work and releases listeners. Keep the allowlist and public token table in
+[docs/STYLING.md](./docs/STYLING.md) aligned. Hidden loading editors pause their subscription;
+resumed/remounted editors read a fresh snapshot and remeasure without discarding drafts.

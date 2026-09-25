@@ -28,7 +28,7 @@ export function GridStatusLayer({
     <>
       {hasResult && rowCount === 0 && (
         <div
-          className="rdg-empty-content"
+          className="dgr-empty-content"
           style={{ top: rowHeight }}
           inert={loading || undefined}
         >
@@ -37,11 +37,11 @@ export function GridStatusLayer({
       )}
       {loading && (
         <div
-          className="rdg-loading-layer"
+          className="dgr-loading-layer"
           data-grid-state={hasResult ? "refreshing" : "initial-loading"}
         >
           <div
-            className="rdg-loading-body"
+            className="dgr-loading-body"
             style={{
               top: rowHeight,
               maxWidth: hasResult ? undefined : totalWidth,
@@ -50,9 +50,9 @@ export function GridStatusLayer({
             inert
           >
             {hasResult ? (
-              <div className="rdg-loading-indicator">
+              <div className="dgr-loading-indicator">
                 {loadingIndicator === undefined ? (
-                  <span className="rdg-loading-spinner" />
+                  <span className="dgr-loading-spinner" />
                 ) : (
                   loadingIndicator
                 )}
@@ -65,7 +65,7 @@ export function GridStatusLayer({
       )}
       {/* Outside aria-busy/inert content so the loading announcement is not deferred. */}
       <div
-        className="rdg-status-text"
+        className="dgr-status-text"
         role={loading ? "status" : undefined}
         aria-live="polite"
         aria-atomic="true"

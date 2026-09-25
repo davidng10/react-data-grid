@@ -1,9 +1,7 @@
 import { cellKey } from "../core/types/ids";
 import { PendingOverlay } from "../editors/PendingOverlay";
 import { resolveColumnCapabilities } from "../internal/column-capabilities";
-import { FROZEN_BG, HEADER_BG, HEADER_BORDER } from "../internal/constants";
 import { readContent } from "../internal/read-content";
-import { FREEZE_DIVIDER_LEFT, FREEZE_DIVIDER_RIGHT } from "../internal/style";
 import { Cell } from "./Cell";
 import { DragOverlay } from "./DragOverlay";
 import { EmptyRowsLayer } from "./EmptyRowsLayer";
@@ -12,14 +10,19 @@ import { ResizeOverlay } from "./ResizeOverlay";
 import { SelectionOverlay } from "./SelectionOverlay";
 
 import type { VirtualItem } from "@tanstack/react-virtual";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { GridGeometry, Zone } from "../core/selection/geometry";
 import type { DragStore } from "../core/store/drag-store";
 import type { EditStore } from "../core/store/edit-store";
 import type { GridStore } from "../core/store/grid-store";
 import type { PendingStore } from "../core/store/pending-store";
 import type { ResizeStore } from "../core/store/resize-store";
-import type { Column, HeaderRenderContext, RowId } from "../core/types";
+import type {
+  CellRenderContext,
+  Column,
+  HeaderRenderContext,
+  RowId,
+} from "../core/types";
 
 /** A rendered column with its resolved zone-local position. */
 export type PlacedCol<T> = {
@@ -76,43 +79,20 @@ export function GridZone<T>(props: {
     rowIndexById,
   } = props;
 
-  // Frozen zones are `sticky` flex items (z2 — above the scrolling center) pinned to their side with
-  // the freeze-divider box-shadow; the center is a plain `relative` flex item. Both flex `0 0 total`.
-  const wrapperStyle: CSSProperties =
-    zone === "center"
-      ? { flex: `0 0 ${total}px`, position: "relative" }
-      : zone === "left"
-        ? {
-            flex: `0 0 ${total}px`,
-            position: "sticky",
-            zIndex: 2,
-            left: gutterW,
-            ...FREEZE_DIVIDER_LEFT,
-          }
-        : {
-            flex: `0 0 ${total}px`,
-            position: "sticky",
-            zIndex: 2,
-            right: 0,
-            ...FREEZE_DIVIDER_RIGHT,
-          };
-
   // The `frozen` flag on header/cell is set for the frozen zones, omitted (undefined) for center.
   const frozen = zone === "center" ? undefined : zone;
 
   return (
-    <div style={wrapperStyle}>
+    <div
+      className="dgr-zone"
+      data-zone={zone}
+      style={{
+        flex: `0 0 ${total}px`,
+        left: zone === "left" ? gutterW : undefined,
+      }}
+    >
       {/* header row: sticky on the vertical axis (the frozen corner is sticky on both axes) */}
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 1,
-          height: rowHeight,
-          background: HEADER_BG,
-          borderBottom: HEADER_BORDER,
-        }}
-      >
+      <div className="dgr-header-row" style={{ height: rowHeight }}>
         {placedCols.map((pc) => {
           const capabilities = resolveColumnCapabilities(pc.col);
           const headerContext: HeaderRenderContext<T> = {
@@ -127,6 +107,11 @@ export function GridZone<T>(props: {
           return (
             <HeaderCell
               key={pc.col.id}
+              className={
+                typeof pc.col.headerClassName === "function"
+                  ? pc.col.headerClassName(headerContext)
+                  : pc.col.headerClassName
+              }
               content={
                 pc.col.renderHeader
                   ? pc.col.renderHeader(headerContext)
@@ -145,35 +130,39 @@ export function GridZone<T>(props: {
         <DragOverlay zone={zone} dragStore={dragStore} rowHeight={rowHeight} />
       </div>
       {/* body */}
-      <div
-        style={{
-          position: "relative",
-          height: totalHeight,
-          background: FROZEN_BG,
-        }}
-      >
+      <div className="dgr-body" style={{ height: totalHeight }}>
         <EmptyRowsLayer rowHeight={rowHeight} />
         {vRows.map((vr) => {
           const row = rows[vr.index];
           const rowId = getRowId(row, vr.index);
-          return placedCols.map((pc) => (
-            <Cell
-              key={cellKey(rowId, pc.col.id)}
-              content={readContent(
-                pc.col,
-                row,
-                vr.index,
-                rowId,
-                pc.width,
-                vr.size
-              )}
-              x={pc.x}
-              y={vr.start}
-              width={pc.width}
-              height={vr.size}
-              frozen={frozen}
-            />
-          ));
+          return placedCols.map((pc) => {
+            const context: CellRenderContext<T> = {
+              row,
+              rowId,
+              rowIndex: vr.index,
+              column: pc.col,
+              columnId: pc.col.id,
+              value: pc.col.accessor(row),
+              width: pc.width,
+              height: vr.size,
+            };
+            return (
+              <Cell
+                key={cellKey(rowId, pc.col.id)}
+                className={
+                  typeof pc.col.cellClassName === "function"
+                    ? pc.col.cellClassName(context)
+                    : pc.col.cellClassName
+                }
+                content={readContent(context)}
+                x={pc.x}
+                y={vr.start}
+                width={pc.width}
+                height={vr.size}
+                frozen={frozen}
+              />
+            );
+          });
         })}
         <SelectionOverlay
           zone={zone}

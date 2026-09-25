@@ -97,6 +97,11 @@ export interface Column<T> {
   /** Commit handler for this column. Falls back to the grid-level handler. */
   onCommit?: (update: CellCommit<T>) => Promise<void> | void;
 
+  /** Visual classes resolved during ordinary rendering; must not change cell geometry. */
+  cellClassName?: string | ((ctx: CellRenderContext<T>) => string | undefined);
+  headerClassName?:
+    string | ((ctx: HeaderRenderContext<T>) => string | undefined);
+
   // Render hooks. Defaults coerce values to truncated strings.
   renderCell?: (ctx: CellRenderContext<T>) => ReactNode;
   renderHeader?: (ctx: HeaderRenderContext<T>) => ReactNode;

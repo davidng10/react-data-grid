@@ -5,6 +5,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 
 import { DataGrid } from "../data-grid";
+import gridStyles from "../internal/grid.css?raw";
 
 import type { Column, GridSelection } from "../core/types";
 import type { DataGridProps } from "../data-grid";
@@ -360,6 +361,8 @@ describe("column resize", () => {
   });
 
   it("shows the resize cursor on both sides of a column boundary", () => {
+    // jsdom needs the real stylesheet installed for computed cursor checks.
+    render(<style>{gridStyles}</style>);
     renderGrid();
 
     const leftHeader = screen.getByText("C0");

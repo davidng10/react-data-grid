@@ -105,13 +105,13 @@ result with no rows. Preserve that distinction instead of replacing missing data
 
 Here `data` and `isFetching` come from your application. The grid does not fetch or cache data.
 
-| Rows | Loading | Display |
-| --- | --- | --- |
-| `null` / `undefined` | `true` | Headers and skeleton rows, without a spinner |
-| `null` / `undefined` | `false` | Headers and a blank body; the app handles errors or instructions |
-| Any array | `true` | Retained result beneath an overlay covering headers and body, with a spinner |
-| `[]` | `false` | Empty content, defaulting to “No rows” |
-| Populated array | `false` | Normal grid |
+| Rows                 | Loading | Display                                                                      |
+| -------------------- | ------- | ---------------------------------------------------------------------------- |
+| `null` / `undefined` | `true`  | Headers and skeleton rows, without a spinner                                 |
+| `null` / `undefined` | `false` | Headers and a blank body; the app handles errors or instructions             |
+| Any array            | `true`  | Retained result beneath an overlay covering headers and body, with a spinner |
+| `[]`                 | `false` | Empty content, defaulting to “No rows”                                       |
+| Populated array      | `false` | Normal grid                                                                  |
 
 Keep supplying previous rows during sorting, filtering, or pagination requests to retain them under
 the overlay. Passing missing rows removes that result and shows the initial skeleton while loading.
@@ -139,9 +139,9 @@ colors through CSS variables on the frame:
 
 ```css
 .my-grid {
-  --rdg-loading-overlay-background: rgb(255 255 255 / 65%);
-  --rdg-loading-indicator-color: #57534e;
-  --rdg-empty-color: #78716c;
+  --dgr-loading-overlay-background: rgb(255 255 255 / 65%);
+  --dgr-loading-indicator-color: #57534e;
+  --dgr-empty-color: #78716c;
 }
 ```
 
@@ -149,6 +149,18 @@ Run the playground and open `/loading` to exercise initial load, refresh, empty 
 indicators, and a delayed background refresh while editing.
 
 ## Column behavior
+
+Explicit column widths are preserved, even when they leave unused space. The last column in visual
+order without a `width` or a width override fills the remaining viewport width; earlier unspecified
+columns use the 140px default. The available space excludes the checkbox gutter and all other
+columns, including frozen columns. Automatic sizing respects `minWidth` (48px by default) and
+`maxWidth`: insufficient room causes horizontal scrolling, while a maximum can leave unused space.
+
+Manually resizing an automatic column gives it an explicit width for the session. The last remaining
+unspecified column then fills the space, if there is one. Controlled `columnWidths` and
+`defaultColumnWidths` also count as explicit widths. Removing a controlled override restores the
+column's eligibility for automatic sizing when its schema has no `width`. Container-driven sizing
+does not emit `onColumnWidthsChange`.
 
 - `accessor` reads the displayed value from a row.
 - `editable` enables editing; `renderEditor` can provide a custom editor.
@@ -180,3 +192,15 @@ npm run build
 ```
 
 See [INTERNALS.md](./INTERNALS.md) for the rendering model and performance constraints.
+
+## Styling and themes
+
+Default styles are scoped to grid-owned classes and import with the source component. Set
+`--dgr-*` variables on the frame or an ancestor; active body-mounted editors copy their originating
+grid's theme. Columns accept `cellClassName` and `headerClassName` as strings or context callbacks.
+Use `rowHeight` and column widths for geometry; CSS controls appearance.
+
+See the [styling contract](./docs/STYLING.md) for tokens, defaults, parts, callback contexts, and
+portal synchronization limits. `/styling` demonstrates two independent themes; `/styling-check.html`
+runs the same examples without the playground reset. [Verification notes](./docs/STYLING_VERIFICATION.md)
+record the checks and compatibility limits.
