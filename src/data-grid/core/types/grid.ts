@@ -1,13 +1,22 @@
 // Canonical public grid contract.
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { Column } from "./column";
 import type { CellCommit, CellCommitFailure } from "./editing";
 import type { ColumnId, RowId } from "./ids";
 import type { GridSelection } from "./selection";
 
 export interface DataGridProps<T> {
-  rows: readonly T[];
+  /** null/undefined means no result is available; [] is a completed empty result. */
+  rows: readonly T[] | null | undefined;
+  /** Application-owned request activity. Keep previous rows supplied during a refresh. */
+  loading?: boolean;
+  /** Replaces only the refresh indicator. Initial loading always uses skeletons. */
+  loadingIndicator?: ReactNode;
+  /** Accessible loading announcement, independent of the visual indicator. */
+  loadingLabel?: string;
+  /** Content for a completed empty result. Defaults to "No rows"; null hides it. */
+  emptyContent?: ReactNode;
   columns: readonly Column<T>[];
   getRowId: (row: T, index: number) => RowId;
 

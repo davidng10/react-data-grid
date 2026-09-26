@@ -15,6 +15,8 @@ export interface ColumnResizeHandlers {
   onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => boolean;
   onPointerUp: (e: ReactPointerEvent<HTMLDivElement>) => boolean;
   onLostPointerCapture: () => void;
+  /** Abort without committing the guide (for application loading). */
+  cancel: () => void;
 }
 
 // Handles commit-on-release column resizing. Pointer moves update only the guide overlay; committing
@@ -124,5 +126,17 @@ export function useColumnResize<T>(args: {
     if (src.width !== src.startWidth) onCommit(src.columnId, src.width);
   };
 
-  return { onPointerDown, onPointerMove, onPointerUp, onLostPointerCapture };
+  const cancel = () => {
+    sourceRef.current = null;
+    resizeStore.end();
+    if (scrollRef.current) scrollRef.current.style.cursor = "";
+  };
+
+  return {
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onLostPointerCapture,
+    cancel,
+  };
 }

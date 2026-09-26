@@ -512,8 +512,8 @@ describe("cell validation", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Must be 10 to 100");
     const editor = ta.closest("[data-editing]");
     expect(editor).toHaveAttribute("data-invalid", "");
-    expect(editor).toHaveStyle({ borderColor: "#dc2626" });
-    expect(ta.style.borderStyle).toBe("none"); // the panel owns the only outer frame
+    expect(editor).toHaveClass("dgr-editor-host"); // Colors are verified in the browser.
+    expect(ta).toHaveClass("dgr-editor-input"); // the panel owns the only outer frame
     expect(onCellCommit).not.toHaveBeenCalled();
   });
 
@@ -606,7 +606,7 @@ describe("cell validation", () => {
     expect(validate).toHaveBeenLastCalledWith(60, expect.anything());
     const editor = ta.closest("[data-editing]");
     expect(editor).not.toHaveAttribute("data-invalid");
-    expect(editor).toHaveStyle({ borderColor: "#2563eb" });
+    expect(editor).toHaveClass("dgr-editor-host");
     expect(screen.getByRole("textbox")).toBeInTheDocument(); // still open, no longer errored
   });
 

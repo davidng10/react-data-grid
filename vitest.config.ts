@@ -20,6 +20,8 @@ export default defineConfig({
         test: {
           name: "dom",
           environment: "jsdom",
+          // Preserve grid CSS (including ?raw) for computed-style assertions.
+          css: { include: [/grid\.css/] },
           include: ["src/**/*.test.tsx"],
           setupFiles: ["./vitest.setup.dom.ts"],
         },

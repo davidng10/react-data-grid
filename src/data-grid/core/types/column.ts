@@ -60,8 +60,11 @@ export interface Column<T> {
   /** Read this column's value from a row. */
   accessor: (row: T) => unknown;
 
-  // Layout. `width` is the initial width; the grid layers in-session resizes over it. All widths are
-  // clamped to `minWidth` and `maxWidth`.
+  /**
+   * Initial width in px; manual/controlled width overrides take precedence.
+   * The last column in visual order without a width or override fills the remaining viewport.
+   * Earlier unspecified columns use DEFAULT_COL_WIDTH. All widths respect minWidth/maxWidth.
+   */
   width?: number;
   /** Resize floor in px. Default MIN_COL_WIDTH. */
   minWidth?: number;
@@ -93,6 +96,11 @@ export interface Column<T> {
   ) => string | null | undefined;
   /** Commit handler for this column. Falls back to the grid-level handler. */
   onCommit?: (update: CellCommit<T>) => Promise<void> | void;
+
+  /** Visual classes resolved during ordinary rendering; must not change cell geometry. */
+  cellClassName?: string | ((ctx: CellRenderContext<T>) => string | undefined);
+  headerClassName?:
+    string | ((ctx: HeaderRenderContext<T>) => string | undefined);
 
   // Render hooks. Defaults coerce values to truncated strings.
   renderCell?: (ctx: CellRenderContext<T>) => ReactNode;

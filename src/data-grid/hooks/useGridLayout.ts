@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { resolveColumnCapabilities } from "../internal/column-capabilities";
@@ -71,16 +71,22 @@ export function useGridLayout<T>(args: {
 
   const gutterW = enableRowSelection ? GUTTER_WIDTH : 0;
 
-  // Clamp all width sources so headers, cells, and overlays share the same geometry.
-  const widthOf = useCallback(
-    (c: Column<T>) =>
-      clampNum(
-        widthOverrides?.[c.id] ?? c.width ?? DEFAULT_COL_WIDTH,
-        c.minWidth ?? MIN_COL_WIDTH,
-        c.maxWidth ?? Infinity
-      ),
-    [widthOverrides]
+  const needsViewportWidth = columns.some(
+    (c) => c.width == null && widthOverrides?.[c.id] == null
   );
+  const [viewportWidth, setViewportWidth] = useState<number>();
+
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || !needsViewportWidth) return;
+    // clientWidth excludes the vertical scrollbar. Observe the content box so a scrollbar
+    // appearing/disappearing updates the available space even when the outer frame stays fixed.
+    const updateWidth = () => setViewportWidth(scroller.clientWidth);
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, [scrollRef, needsViewportWidth]);
 
   // Apply controlled order before zoning. A stable sort places unknown ids after listed ids while
   // preserving their source order. Frozen state still controls zone membership.
@@ -108,6 +114,38 @@ export function useGridLayout<T>(args: {
     }
     return { left, center, right };
   }, [ordered]);
+
+  // Resolve one shared set of actual widths for rendering, virtualization, and interaction.
+  // Explicit schema widths and manual/controlled overrides always win. Only the last unspecified
+  // column in visual order absorbs remaining space; earlier unspecified columns use the default.
+  const widthOf = useMemo(() => {
+    const widths = new Map<ColumnId, number>();
+    let automatic: Column<T> | undefined;
+    let total = gutterW;
+    for (const c of [...zones.left, ...zones.center, ...zones.right]) {
+      const specified = widthOverrides?.[c.id] ?? c.width;
+      const width = clampNum(
+        specified ?? DEFAULT_COL_WIDTH,
+        c.minWidth ?? MIN_COL_WIDTH,
+        c.maxWidth ?? Infinity
+      );
+      widths.set(c.id, width);
+      total += width;
+      if (specified == null) automatic = c;
+    }
+    if (automatic && viewportWidth != null) {
+      const otherWidth = total - widths.get(automatic.id)!;
+      widths.set(
+        automatic.id,
+        clampNum(
+          viewportWidth - otherWidth,
+          automatic.minWidth ?? MIN_COL_WIDTH,
+          automatic.maxWidth ?? Infinity
+        )
+      );
+    }
+    return (c: Column<T>) => widths.get(c.id)!;
+  }, [zones, widthOverrides, gutterW, viewportWidth]);
 
   const left = useMemo(
     () => zoneLayout(zones.left, widthOf),

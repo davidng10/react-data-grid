@@ -6,9 +6,11 @@ export type EditStatus = "editing" | "submitting" | "error";
 
 export type EditState =
   | { status: "idle" }
-  | { status: "editing"; cell: CellCoord; draft: unknown }
-  | { status: "submitting"; cell: CellCoord; draft: unknown }
-  | { status: "error"; cell: CellCoord; draft: unknown; error: unknown };
+  | ({ cell: CellCoord; draft: unknown; rowId?: RowId } & (
+      | { status: "editing" }
+      | { status: "submitting" }
+      | { status: "error"; error: unknown }
+    ));
 
 /**
  * Payload handed to `onCommit` / `onCellCommit`. The consumer applies `nextValue` to its own

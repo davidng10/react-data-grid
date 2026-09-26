@@ -1,12 +1,13 @@
 import { memo } from "react";
 
-import { HEADER_BG, RESIZE_HANDLE_WIDTH } from "../internal/constants";
-import { cellBase } from "../internal/style";
+import { classNames } from "../internal/class-names";
+import { RESIZE_HANDLE_WIDTH } from "../internal/constants";
 
 import type { ReactNode } from "react";
 import type { FrozenZone } from "../core/types";
 
 export const HeaderCell = memo(function HeaderCell(props: {
+  className?: string;
   content: ReactNode;
   x: number;
   width: number;
@@ -31,12 +32,9 @@ export const HeaderCell = memo(function HeaderCell(props: {
   } = props;
   return (
     <div
+      className={classNames("dgr-header-cell", props.className)}
       data-frozen={frozen}
       style={{
-        ...cellBase,
-        fontWeight: 600,
-        borderRight: "1px solid #e7e5e4",
-        background: HEADER_BG,
         width,
         height,
         lineHeight: `${height}px`,
@@ -51,13 +49,8 @@ export const HeaderCell = memo(function HeaderCell(props: {
         <div
           data-resize-handle="left"
           style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
             width: RESIZE_HANDLE_WIDTH,
             height,
-            cursor: "col-resize",
-            zIndex: 1,
           }}
         />
       )}
@@ -65,13 +58,8 @@ export const HeaderCell = memo(function HeaderCell(props: {
         <div
           data-resize-handle="right"
           style={{
-            position: "absolute",
-            top: 0,
-            right: 0,
             width: RESIZE_HANDLE_WIDTH,
             height,
-            cursor: "col-resize",
-            zIndex: 1,
           }}
         />
       )}

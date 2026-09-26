@@ -1,11 +1,6 @@
 import { memo, useSyncExternalStore } from "react";
 
 import { cellToZoneRect, rangeToZoneRects } from "../core/selection/geometry";
-import {
-  FOCUS_BORDER,
-  SELECT_BORDER,
-  SELECT_FILL,
-} from "../internal/constants";
 
 import type { GridGeometry, Zone } from "../core/selection/geometry";
 import type { EditStore } from "../core/store/edit-store";
@@ -45,34 +40,25 @@ export const SelectionOverlay = memo(function SelectionOverlay(props: {
   // No z-index: rendered after the cells, so it paints above them by tree order while staying
   // below the sticky header (z1) and — for the center — below the frozen zones (z2).
   return (
-    <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+    <div className="dgr-overlay">
       {rangeRects.map((r, i) => (
         <div
+          className="dgr-selection-range"
           key={i}
           style={{
-            position: "absolute",
-            left: 0,
-            top: 0,
             width: r.width,
             height: r.height,
             transform: `translate(${r.x}px, ${r.y}px)`,
-            background: SELECT_FILL,
-            border: SELECT_BORDER,
-            boxSizing: "border-box",
           }}
         />
       ))}
       {focus && (
         <div
+          className="dgr-focus-ring"
           style={{
-            position: "absolute",
-            left: 0,
-            top: 0,
             width: focus.width,
             height: focus.height,
             transform: `translate(${focus.x}px, ${focus.y}px)`,
-            border: FOCUS_BORDER,
-            boxSizing: "border-box",
           }}
         />
       )}

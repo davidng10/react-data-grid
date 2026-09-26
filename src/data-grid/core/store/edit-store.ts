@@ -2,7 +2,7 @@
 // pending store after the editor closes.
 
 import type { EditState } from "../types/editing";
-import type { CellCoord } from "../types/ids";
+import type { CellCoord, RowId } from "../types/ids";
 
 const IDLE: EditState = { status: "idle" };
 
@@ -11,7 +11,7 @@ export interface EditStore {
   subscribe: (listener: () => void) => () => void;
 
   /** Open the editor on `cell` with an initial draft (current value, or a typed char). */
-  begin: (cell: CellCoord, draft: unknown) => void;
+  begin: (cell: CellCoord, draft: unknown, rowId?: RowId) => void;
   /**
    * Update the draft as the user types. No-op while submitting (the editor is locked). After an
    * error, retain that error until the editing orchestrator revalidates the updated draft.
@@ -48,35 +48,48 @@ export function createEditStore(): EditStore {
       };
     },
 
-    begin(cell, draft) {
-      set({ status: "editing", cell, draft });
+    begin(cell, draft, rowId) {
+      set({
+        status: "editing",
+        cell,
+        draft,
+        ...(rowId == null ? {} : { rowId }),
+      });
     },
 
     setDraft(next) {
       // Only meaningful while an editor is open; a locked (submitting) editor ignores input.
       if (state.status === "editing") {
-        set({ status: "editing", cell: state.cell, draft: next });
+        set({ ...state, draft: next });
       } else if (state.status === "error") {
         // Keep the message stable while corrective validation is debounced. The editing
         // orchestrator clears or replaces it after checking the latest draft.
         set({
-          status: "error",
-          cell: state.cell,
+          ...state,
           draft: next,
-          error: state.error,
         });
       }
     },
 
     clearError() {
       if (state.status === "error") {
-        set({ status: "editing", cell: state.cell, draft: state.draft });
+        set({
+          status: "editing",
+          cell: state.cell,
+          draft: state.draft,
+          ...(state.rowId == null ? {} : { rowId: state.rowId }),
+        });
       }
     },
 
     submitting() {
       if (state.status === "editing" || state.status === "error") {
-        set({ status: "submitting", cell: state.cell, draft: state.draft });
+        set({
+          status: "submitting",
+          cell: state.cell,
+          draft: state.draft,
+          ...(state.rowId == null ? {} : { rowId: state.rowId }),
+        });
       }
     },
 
@@ -86,7 +99,7 @@ export function createEditStore(): EditStore {
 
     fail(error) {
       if (state.status !== "idle") {
-        set({ status: "error", cell: state.cell, draft: state.draft, error });
+        set({ ...state, status: "error", error });
       }
     },
 

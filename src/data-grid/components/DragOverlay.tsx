@@ -1,7 +1,5 @@
 import { memo, useSyncExternalStore } from "react";
 
-import { DROP_LINE_COLOR } from "../internal/constants";
-
 import type { Zone } from "../core/selection/geometry";
 import type { DragStore } from "../core/store/drag-store";
 
@@ -15,17 +13,12 @@ export const DragOverlay = memo(function DragOverlay(props: {
   const drag = useSyncExternalStore(dragStore.subscribe, dragStore.getSnapshot);
   if (drag.status !== "dragging" || drag.sourceZone !== zone) return null;
   return (
-    <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+    <div className="dgr-overlay">
       <div
+        className="dgr-reorder-indicator"
         style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: 2,
           height: rowHeight,
           transform: `translateX(${drag.indicatorX - 1}px)`,
-          background: DROP_LINE_COLOR,
-          zIndex: 2,
         }}
       />
     </div>

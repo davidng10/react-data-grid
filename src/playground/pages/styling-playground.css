@@ -1,0 +1,178 @@
+.styling-demo {
+  max-width: 1600px;
+  padding: 28px;
+  margin: auto;
+  font-family: system-ui, sans-serif;
+  color: #24364b;
+}
+.styling-intro {
+  margin-bottom: 28px;
+  max-width: 760px;
+}
+.styling-intro nav {
+  display: flex;
+  gap: 20px;
+  font-size: 13px;
+}
+.styling-intro a {
+  color: #315d83;
+}
+.styling-kicker {
+  margin: 28px 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+}
+.styling-intro h1 {
+  font-family: Georgia, serif;
+  font-weight: 400;
+  font-size: 38px;
+  letter-spacing: -0.04em;
+  margin: 0 0 12px;
+}
+.styling-intro p:last-child {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.styling-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+.styling-example {
+  min-width: 0;
+  border: 1px solid var(--dgr-frozen-divider-color);
+  border-radius: 8px;
+  overflow: hidden;
+  color: var(--dgr-text-color);
+  background: var(--dgr-background);
+}
+.styling-example-title {
+  padding: 18px 18px 12px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.styling-example-title h2 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+}
+.styling-example-title span {
+  font: 11px monospace;
+  opacity: 0.7;
+}
+.styling-controls {
+  padding: 0 18px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+.styling-controls button,
+.styling-controls select,
+.styling-custom-editor button,
+.styling-custom-editor select {
+  box-sizing: border-box;
+  font:
+    12px system-ui,
+    sans-serif;
+  padding: 5px 7px;
+  border: 1px solid var(--dgr-header-border-color);
+  border-radius: 4px;
+  color: var(--dgr-text-color);
+  background: var(--dgr-header-background);
+}
+.styling-controls button {
+  cursor: pointer;
+}
+.styling-controls label {
+  font-size: 11px;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.styling-grid-wrap {
+  height: 360px;
+  border-block: 1px solid var(--dgr-frozen-divider-color);
+}
+.styling-caption {
+  padding: 12px 18px;
+  margin: 0;
+  font-size: 12px;
+  min-height: 36px;
+  box-sizing: border-box;
+}
+.styling-footer {
+  margin-top: 20px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #63758a;
+}
+.styling-negative {
+  color: var(--dgr-error-color);
+  font-weight: 600;
+}
+.styling-number-heading {
+  text-align: right;
+}
+.styling-custom-editor {
+  padding: 8px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.styling-custom-editor label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.demo-light {
+  --dgr-background: #fff;
+  --dgr-text-color: #24364b;
+  --dgr-header-background: #edf3f8;
+  --dgr-cell-border-color: #e7edf3;
+  --dgr-header-border-color: #ccd9e5;
+  --dgr-frozen-divider-color: #afc3d4;
+  --dgr-focus-color: #226c9c;
+  --dgr-selection-background: rgb(34 108 156 / 12%);
+  --dgr-selection-border-color: #689abd;
+  --dgr-error-color: #b33142;
+  --dgr-error-background: rgb(179 49 66 / 12%);
+  --dgr-skeleton-bar-color: #dbe6ef;
+  --dgr-pending-color: #416983;
+}
+.demo-dark {
+  --dgr-background: #111827;
+  --dgr-text-color: #f3f4f6;
+  --dgr-header-background: #1f2937;
+  --dgr-cell-border-color: #374151;
+  --dgr-header-border-color: #4b5563;
+  --dgr-frozen-divider-color: #64748b;
+  --dgr-focus-color: #93c5fd;
+  --dgr-selection-background: rgb(147 197 253 / 17%);
+  --dgr-selection-border-color: #93c5fd;
+  --dgr-resize-indicator-color: #93c5fd;
+  --dgr-reorder-indicator-color: #93c5fd;
+  --dgr-skeleton-background: #111827;
+  --dgr-skeleton-bar-color: #374151;
+  --dgr-loading-overlay-background: rgb(17 24 39 / 65%);
+  --dgr-loading-indicator-color: #e5e7eb;
+  --dgr-empty-color: #d1d5db;
+  --dgr-pending-color: #a5b4fc;
+  --dgr-error-color: #fda4af;
+  --dgr-error-background: rgb(159 18 57 / 30%);
+  --dgr-editor-shadow: 0 4px 18px rgb(0 0 0 / 40%);
+}
+@media (max-width: 900px) {
+  .styling-comparison {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .styling-demo {
+    padding: 16px;
+  }
+  .styling-intro h1 {
+    font-size: 30px;
+  }
+}

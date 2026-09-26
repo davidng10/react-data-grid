@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import { stepCoord } from "../core/selection/geometry";
 import { ERROR_FLASH_MS } from "../core/store/pending-store";
@@ -38,11 +38,13 @@ export interface CellEditingApi {
 // Coordinates editing, validation, and optimistic commits. This hook mutates stores but does not
 // subscribe, keeping edit updates off the windowed cell body.
 export function useCellEditing<T>(args: {
+  loading: boolean;
   store: GridStore;
   editStore: EditStore;
   pendingStore: PendingStore;
   columns: readonly Column<T>[];
   rows: readonly T[];
+  rowIndexById: ReadonlyMap<RowId, number>;
   getRowId: (row: T, index: number) => RowId;
   rowHeight: number;
   geom: GridGeometry;
@@ -52,11 +54,13 @@ export function useCellEditing<T>(args: {
   scrollCellIntoView: (cell: CellCoord) => void;
 }): CellEditingApi {
   const {
+    loading,
     store,
     editStore,
     pendingStore,
     columns,
     rows,
+    rowIndexById,
     getRowId,
     rowHeight,
     geom,
@@ -65,6 +69,12 @@ export function useCellEditing<T>(args: {
     scrollRef,
     scrollCellIntoView,
   } = args;
+
+  // Also guards callbacks retained by custom editors and events dispatched during DOM changes.
+  const loadingRef = useRef(loading);
+  useLayoutEffect(() => {
+    loadingRef.current = loading;
+  });
 
   const returnFocus = () => scrollRef.current?.focus();
   const findColumn = (id: ColumnId) => columns.find((c) => c.id === id);
@@ -109,6 +119,8 @@ export function useCellEditing<T>(args: {
   // Open the editor on a cell. `initialDraft` overrides the current value (type-to-replace).
   // A cell mid-commit is "disabled" — refuse until its pending overlay resolves.
   const beginEdit = (cell: CellCoord, initialDraft?: unknown): boolean => {
+    if (loadingRef.current || editStore.getSnapshot().status !== "idle")
+      return false;
     clearCorrectiveTimer();
     const col = findColumn(cell.columnId);
     const row = rows[cell.rowIndex];
@@ -123,14 +135,29 @@ export function useCellEditing<T>(args: {
     scrollCellIntoView(cell);
     editStore.begin(
       cell,
-      initialDraft !== undefined ? initialDraft : col.accessor(row)
+      initialDraft !== undefined ? initialDraft : col.accessor(row),
+      getRowId(row, cell.rowIndex)
     );
     return true;
   };
 
+  const resolveCell = (originalCell: CellCoord, targetRowId?: RowId) => {
+    const rowIndex =
+      targetRowId == null
+        ? originalCell.rowIndex
+        : rowIndexById.get(targetRowId);
+    return rowIndex == null ? null : { ...originalCell, rowIndex };
+  };
+
   // Resolve the consumer-facing context and parsed value in one place so commit-time validation
   // and debounced corrective validation always evaluate the draft identically.
-  const resolveDraft = (cell: CellCoord, draft: unknown) => {
+  const resolveDraft = (
+    originalCell: CellCoord,
+    draft: unknown,
+    targetRowId?: RowId
+  ) => {
+    const cell = resolveCell(originalCell, targetRowId);
+    if (!cell) return null;
     const col = findColumn(cell.columnId);
     const row = rows[cell.rowIndex];
     if (!col || row == null) return null;
@@ -161,9 +188,10 @@ export function useCellEditing<T>(args: {
   // mounted during the delay, avoiding false blue/valid feedback and repeated alert insertion.
   const revalidateCorrectedDraft = () => {
     correctiveTimerRef.current = null;
+    if (loadingRef.current) return;
     const snap = editStore.getSnapshot();
     if (snap.status !== "error") return;
-    const resolved = resolveDraft(snap.cell, snap.draft);
+    const resolved = resolveDraft(snap.cell, snap.draft, snap.rowId);
     if (!resolved) return;
     const { col, nextValue, previousValue, editCtx } = resolved;
     if (Object.is(nextValue, previousValue)) {
@@ -180,6 +208,7 @@ export function useCellEditing<T>(args: {
   });
 
   const setDraft = (next: unknown) => {
+    if (loadingRef.current) return;
     const wasError = editStore.getSnapshot().status === "error";
     editStore.setDraft(next);
     if (!wasError) return; // initial typing remains validation-free
@@ -191,6 +220,7 @@ export function useCellEditing<T>(args: {
   };
 
   const cancelEdit = () => {
+    if (loadingRef.current) return;
     clearCorrectiveTimer();
     editStore.cancel(); // abandon — no commit
     returnFocus();
@@ -200,16 +230,17 @@ export function useCellEditing<T>(args: {
   // outside click cannot trap focus. Accepted values move to the pending overlay while the consumer
   // persists them. Returns whether the editor closed.
   const startCommit = (implicit: boolean): boolean => {
+    if (loadingRef.current) return false;
     // Enter/Tab/blur never wait for the debounce: validate the latest draft immediately.
     clearCorrectiveTimer();
     const snap = editStore.getSnapshot();
     if (snap.status === "idle") return false;
     const { cell, draft } = snap;
 
-    const resolved = resolveDraft(cell, draft);
+    const resolved = resolveDraft(cell, draft, snap.rowId);
     if (!resolved) {
-      editStore.succeed(); // can't resolve the cell — just close
-      return true;
+      // The row/column may return after a fetch. Keep the draft until an explicit discard.
+      return false;
     }
     const { col, row, rowId, previousValue, editCtx, nextValue } = resolved;
     if (Object.is(nextValue, previousValue)) {
@@ -279,7 +310,8 @@ export function useCellEditing<T>(args: {
   // rejected validation keeps the editor open — DON'T move or return focus (the editor holds it).
   const commitAndMove = (dir: Direction) => {
     const snap = editStore.getSnapshot();
-    const fromCell = snap.status === "idle" ? null : snap.cell;
+    const fromCell =
+      snap.status === "idle" ? null : resolveCell(snap.cell, snap.rowId);
     if (!startCommit(false)) return; // invalid explicit save → stay open, don't move
     returnFocus();
     if (fromCell) {
@@ -289,12 +321,31 @@ export function useCellEditing<T>(args: {
     }
   };
 
-  return {
-    beginEdit,
-    setDraft,
-    cancelEdit,
-    commitCell,
-    commitImplicit,
-    commitAndMove,
-  };
+  // A custom editor may retain its first context (e.g. a delayed save). Delegate to the latest
+  // committed render so resumed actions resolve current row identities, values and callbacks.
+  const latestApiRef = useRef<CellEditingApi | null>(null);
+  useLayoutEffect(() => {
+    latestApiRef.current = {
+      beginEdit,
+      setDraft,
+      cancelEdit,
+      commitCell,
+      commitImplicit,
+      commitAndMove,
+    };
+    return () => {
+      latestApiRef.current = null;
+    };
+  });
+  return useMemo<CellEditingApi>(
+    () => ({
+      beginEdit: (...args) => latestApiRef.current?.beginEdit(...args) ?? false,
+      setDraft: (next) => latestApiRef.current?.setDraft(next),
+      cancelEdit: () => latestApiRef.current?.cancelEdit(),
+      commitCell: () => latestApiRef.current?.commitCell(),
+      commitImplicit: () => latestApiRef.current?.commitImplicit(),
+      commitAndMove: (dir) => latestApiRef.current?.commitAndMove(dir),
+    }),
+    []
+  );
 }

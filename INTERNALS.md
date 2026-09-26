@@ -24,12 +24,14 @@ The grid uses one native scroll container. A flex row contains the optional chec
 three column zones:
 
 ```text
-scroll container
-└── flex body
-    ├── row gutter       sticky left
-    ├── left zone        sticky left
-    ├── center zone      horizontally virtualized
-    └── right zone       sticky right
+stationary frame
+├── scroll container    isolated stacking context
+│   └── flex body
+│       ├── row gutter       sticky left
+│       ├── left zone        sticky left
+│       ├── center zone      horizontally virtualized
+│       └── right zone       sticky right
+└── status layers       empty content / initial skeleton / refresh overlay
 ```
 
 Each zone owns a sticky header. Frozen zones remain opaque and render above the center zone so
@@ -38,6 +40,17 @@ scrolling cells cannot show through them.
 Rows have a uniform height and are vertically virtualized. Only center columns are horizontally
 virtualized; frozen columns are expected to remain a small set and are always rendered for each
 visible row. Cells are absolutely positioned with transforms inside their zone.
+
+The frame owns public id/className/style and stable viewport presentation. The inner scroller owns
+scrollRef, accessible naming, and keyboard focus. A refresh overlay covers headers and frozen zones
+without entering their scroll coordinates. Initial skeletons fill the visible body without adding
+fake rows. `DataGrid` records whether supplied rows are available, then normalizes null/undefined to
+a shared empty array; internal hooks and row renderers retain their array/nonnullable-row contracts.
+
+Loading uses inert content plus capture guards, including React events bubbling from the body
+editor portal. A layout effect cancels gestures and releases pointer capture. Resize has a separate
+cancel operation because its normal lost-capture behavior commits the last visible guide width.
+Keep network loading independent of `EmptyRowsLayer` behind virtualized cells.
 
 ## Coordinate spaces
 
@@ -112,6 +125,13 @@ the component.
 Custom editor popups must render inside the editor host. A popup mounted elsewhere is treated as an
 outside click and implicitly commits the edit.
 
+Active edit snapshots retain stable row identity. Resolvers use the current row-index map so a fetch
+or reorder cannot redirect a draft to a different row. Callbacks exposed to custom editors delegate
+through the latest committed editing API, including callbacks retained across a refresh. Loading
+hides and disables the portal without clearing its draft or starting a commit; pending commits
+continue independently. Missing targets retain the draft with an explicit discard notice. Focus
+restoration respects any intervening move to an outside control.
+
 ## Performance constraints
 
 - Keep scroll, hover, and pointer-move state off the cell rendering path.
@@ -123,3 +143,24 @@ outside click and implicitly commits the edit.
 
 Run `npm test`, `npm run lint`, and `npm run build` after changes. Geometry and store behavior should
 remain covered by DOM-free unit tests.
+
+## Styling boundaries
+
+`internal/grid.css` and `internal/loading.css` own static layout and visual defaults on grid-owned
+classes. Structural rules use normal class specificity; visual defaults use `:where()` where possible.
+Inline styles retain calculated positions, dimensions, shared hit-area widths, generated mask geometry,
+and runtime state. The root also keeps position, isolation, and box sizing inline after consumer styles
+to preserve its mandatory overrides. Explicit box sizing protects measured cells and headers without
+a host reset. Frozen divider shadows cost no layout width. Skeletons repeat three alpha-mask tiles
+over a CSS-colored backing, with constant
+DOM size regardless of row count; SVG data URLs cannot inherit page CSS variables.
+
+`GridZone` builds one cell context/accessor result for both the class callback and renderer. Only
+resolved class strings reach memoized cell leaves. Selection and focus remain overlay subscriptions.
+
+`useEditorTheme` runs only in the editor leaf. It copies the allowlist in `internal/theme.ts`, plus
+computed base typography/direction, from a separate outer-frame ref. It observes root/ancestor theme
+attributes and listens for resize/system-color-scheme changes, coalescing reads without polling.
+Cleanup cancels queued work and releases listeners. Keep the allowlist and public token table in
+[docs/STYLING.md](./docs/STYLING.md) aligned. Hidden loading editors pause their subscription;
+resumed/remounted editors read a fresh snapshot and remeasure without discarding drafts.

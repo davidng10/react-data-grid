@@ -2,17 +2,20 @@
 // cannot clip it. The host is repositioned imperatively during scrolling to avoid cell re-renders.
 
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 
 import { cellViewportRect } from "../core/selection/geometry";
+import { useEditorTheme } from "../hooks/useEditorTheme";
 import { FloatingTextEditor, NativeSelectEditor } from "./FloatingTextEditor";
 
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import type {
   Direction,
   GridGeometry,
@@ -21,35 +24,14 @@ import type {
 import type { EditStore } from "../core/store/edit-store";
 import type { CellEditContext, Column, EditStatus, RowId } from "../core/types";
 
-// Positioning is owned by the grid — these always win. (transform + visibility are written
-// imperatively in `place`, never via React, so they survive this leaf's scroll re-renders.)
-const HOST_POSITION: CSSProperties = {
-  position: "fixed",
-  top: -2,
-  left: -2,
-};
-
-// The default visual frame for the editor "panel". This is what the integrator restyles via
-// The default editors fill this frame transparently; a custom `renderEditor` should too (e.g. AntD
-// `borderless`), so every editor — default or custom — shares one consistently-styled panel.
-const HOST_FRAME: CSSProperties = {
-  zIndex: 1000,
-  borderRadius: 4,
-  background: "#fff",
-  boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
-};
-
-// Synchronous validation keeps the editor open, so the same grid-owned frame becomes the error
-// indicator. Keep the complete border shorthand present in both states: adding/removing only the
-// `borderColor` longhand makes the browser fall back to `currentColor` (black) when the error clears.
-const HOST_EDITING_BORDER = "1px solid #2563eb";
-const HOST_ERROR_BORDER = "1px solid #dc2626";
-
 export interface EditorPortalProps<T> {
+  frameRef: RefObject<HTMLDivElement | null>;
+  loading: boolean;
   editStore: EditStore;
   scrollRef: { current: HTMLDivElement | null };
   columns: readonly Column<T>[];
   rows: readonly T[];
+  rowIndexById: ReadonlyMap<RowId, number>;
   getRowId: (row: T, index: number) => RowId;
   geom: GridGeometry;
   // View constants (px) needed to convert the active cell to viewport coords each reposition.
@@ -69,10 +51,12 @@ export interface EditorPortalProps<T> {
 
 export function EditorPortal<T>(props: EditorPortalProps<T>) {
   const {
+    loading,
     editStore,
     scrollRef,
     columns,
     rows,
+    rowIndexById,
     getRowId,
     geom,
     gutterW,
@@ -87,8 +71,51 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
   } = props;
 
   const edit = useSyncExternalStore(editStore.subscribe, editStore.getSnapshot);
-  const cell = edit.status === "idle" ? null : edit.cell;
+  const editRowIndex =
+    edit.status === "idle"
+      ? undefined
+      : edit.rowId == null
+        ? edit.cell.rowIndex
+        : rowIndexById.get(edit.rowId);
+  const cell =
+    edit.status === "idle" || editRowIndex == null
+      ? null
+      : { ...edit.cell, rowIndex: editRowIndex };
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
+  const attachHost = useCallback((element: HTMLDivElement | null) => {
+    hostRef.current = element;
+    setHost(element);
+  }, []);
+  // Hidden text has no measurable scroll height; resnapshot and measure on resume.
+  useEditorTheme(props.frameRef, loading ? null : host);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  // Remember editor focus across display:none. External focus always wins over restoration.
+  useLayoutEffect(() => {
+    const onFocus = (event: FocusEvent) => {
+      if (
+        event.target instanceof Node &&
+        event.target !== document.body &&
+        event.target !== restoreFocusRef.current &&
+        !hostRef.current?.contains(event.target)
+      ) {
+        restoreFocusRef.current = null;
+      }
+    };
+    document.addEventListener("focusin", onFocus);
+    return () => document.removeEventListener("focusin", onFocus);
+  }, []);
+  useLayoutEffect(() => {
+    const target = restoreFocusRef.current;
+    if (
+      !loading &&
+      target &&
+      hostRef.current?.contains(target) &&
+      document.activeElement === document.body
+    ) {
+      target.focus({ preventScroll: true });
+    }
+  }, [loading, editRowIndex]);
   // Latest IMPLICIT commit, read by the outside-click listener below (props are fresh closures each
   // render). Outside-click is a focus-leaving trigger, so it discards an invalid draft (not `commit`).
   const commitImplicitRef = useRef(commitImplicit);
@@ -103,7 +130,7 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
   const rowIndex = cell?.rowIndex;
   const columnId = cell?.columnId;
   useLayoutEffect(() => {
-    if (rowIndex == null || columnId == null) return;
+    if (loading || rowIndex == null || columnId == null) return;
     const scroller = scrollRef.current;
     if (!scroller) return;
     const target = { rowIndex, columnId };
@@ -170,12 +197,21 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
       scroller.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
     };
-  }, [rowIndex, columnId, geom, gutterW, leftBand, rightTotal, scrollRef]);
+  }, [
+    loading,
+    rowIndex,
+    columnId,
+    geom,
+    gutterW,
+    leftBand,
+    rightTotal,
+    scrollRef,
+  ]);
 
   // Capture outside clicks before grid selection. Custom editor popups must render inside this host
   // or their clicks will implicitly commit the edit.
   useEffect(() => {
-    if (rowIndex == null || columnId == null) return;
+    if (loading || rowIndex == null || columnId == null) return;
     const onDown = (e: PointerEvent) => {
       const host = hostRef.current;
       const t = e.target;
@@ -184,14 +220,27 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
-  }, [rowIndex, columnId]);
+  }, [loading, rowIndex, columnId]);
 
-  if (edit.status === "idle" || !cell) return null;
+  if (edit.status === "idle") return null;
   if (typeof document === "undefined") return null;
 
-  const column = columns.find((c) => c.id === cell.columnId);
-  const row = rows[cell.rowIndex];
-  if (!column || row == null) return null;
+  const column = columns.find((c) => c.id === edit.cell.columnId);
+  const row = cell == null ? undefined : rows[cell.rowIndex];
+  if (!column || row == null || !cell) {
+    if (loading) return null;
+    return (
+      <div className="dgr-draft-notice" role="status">
+        <span>
+          The edited cell is unavailable. Your draft is preserved until it
+          returns.
+        </span>
+        <button className="dgr-draft-discard" type="button" onClick={cancel}>
+          Discard draft
+        </button>
+      </div>
+    );
+  }
 
   const placement = geom.placement(cell.columnId);
   const width = placement?.width ?? 140;
@@ -243,12 +292,14 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
 
   return createPortal(
     <div
-      ref={hostRef}
-      style={{
-        ...HOST_FRAME,
-        border: hasError ? HOST_ERROR_BORDER : HOST_EDITING_BORDER,
-        ...HOST_POSITION,
+      className="dgr-editor-host"
+      ref={attachHost}
+      onFocusCapture={(event) => {
+        restoreFocusRef.current = event.target as HTMLElement;
       }}
+      style={{ display: loading ? "none" : undefined }}
+      inert={loading || undefined}
+      aria-hidden={loading || undefined}
       data-editing=""
       data-invalid={hasError ? "" : undefined}
     >

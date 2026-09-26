@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import "./internal/grid.css";
 
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+
+import { GridStatusLayer } from "./components/GridStatusLayer";
 import { GridZone } from "./components/GridZone";
 import { RowGutter } from "./components/RowGutter";
 import { createDragStore } from "./core/store/drag-store";
@@ -15,6 +18,7 @@ import { useDragSelect } from "./hooks/useDragSelect";
 import { useGridGeometryHelpers } from "./hooks/useGridGeometryHelpers";
 import { useGridKeyboard } from "./hooks/useGridKeyboard";
 import { useGridLayout } from "./hooks/useGridLayout";
+import { classNames } from "./internal/class-names";
 import { resolveColumnCapabilities } from "./internal/column-capabilities";
 import {
   DEFAULT_OVERSCAN_COLS,
@@ -23,10 +27,13 @@ import {
 } from "./internal/constants";
 import { composePointerGestures } from "./internal/pointer-gestures";
 
+import type { SyntheticEvent } from "react";
 import type { PlacedCol } from "./components/GridZone";
 import type { CellCoord, ColumnId, DataGridProps, RowId } from "./core/types";
 
 export type { DataGridProps } from "./core/types";
+
+const EMPTY_ROWS: readonly never[] = [];
 
 // DOM-rendered grid shell. Rows and center columns are virtualized; frozen zones use sticky
 // positioning. Selection and interaction overlays subscribe to external stores so pointer moves
@@ -56,7 +63,11 @@ function reconcileColumnOrder(
 
 export function DataGrid<T>(props: DataGridProps<T>) {
   const {
-    rows,
+    rows: suppliedRows,
+    loading = false,
+    loadingIndicator,
+    loadingLabel = "Loading data",
+    emptyContent = "No rows",
     columns,
     getRowId,
     rowHeight = DEFAULT_ROW_HEIGHT,
@@ -84,6 +95,10 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     "aria-labelledby": ariaLabelledBy,
   } = props;
 
+  const hasResult = suppliedRows != null;
+  const rows = suppliedRows ?? EMPTY_ROWS;
+
+  const frameRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [store] = useState(() =>
     createGridStore({ selectedRows: new Set(defaultSelectedRowIds) })
@@ -108,7 +123,9 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     [orderControlled, columnOrderProp, internalOrder, columns]
   );
   const reorderable =
-    reorderableProp && (!orderControlled || onColumnOrderChange != null);
+    !loading &&
+    reorderableProp &&
+    (!orderControlled || onColumnOrderChange != null);
   const commitOrder = (next: readonly ColumnId[]) => {
     if (!orderControlled) setInternalOrder([...next]);
     onColumnOrderChange?.(next);
@@ -120,7 +137,9 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   >(() => ({ ...defaultColumnWidths }));
   const resolvedWidths = widthsControlled ? columnWidths : internalWidths;
   const resizeEnabled =
-    resizableProp && (!widthsControlled || onColumnWidthsChange != null);
+    !loading &&
+    resizableProp &&
+    (!widthsControlled || onColumnWidthsChange != null);
   const commitResize = (columnId: ColumnId, width: number) => {
     const next = { ...resolvedWidths, [columnId]: width };
     if (!widthsControlled) setInternalWidths(next);
@@ -205,6 +224,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   }, [columnIds, rowIds, rowIndexById, selectedRowIds, store]);
 
   const updateSelectedRows = (next: ReadonlySet<RowId>) => {
+    if (loading) return;
     const selectedRows = new Set(
       [...next].filter((rowId) => rowIndexById.has(rowId))
     );
@@ -238,11 +258,13 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     commitImplicit,
     commitAndMove,
   } = useCellEditing({
+    loading,
     store,
     editStore,
     pendingStore,
     columns,
     rows,
+    rowIndexById,
     getRowId,
     rowHeight,
     geom,
@@ -289,6 +311,32 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     beginEdit,
     scrollCellIntoView,
   });
+
+  const capturedPointerRef = useRef<number | null>(null);
+  // A loading transition aborts active gestures before another frame or release can commit them.
+  // The normal resize lost-capture path commits its guide, so loading uses explicit cancellation.
+  useLayoutEffect(() => {
+    if (!loading) return;
+    colResize.cancel();
+    colDrag.onLostPointerCapture();
+    dragSel.onLostPointerCapture();
+    const scroller = scrollRef.current;
+    const pointerId = capturedPointerRef.current;
+    capturedPointerRef.current = null;
+    if (
+      scroller &&
+      pointerId != null &&
+      scroller.hasPointerCapture(pointerId)
+    ) {
+      scroller.releasePointerCapture(pointerId);
+    }
+  });
+
+  const blockWhileLoading = (event: SyntheticEvent) => {
+    if (!loading) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   const rowIdAt = (index: number) => rowIds[index];
 
@@ -345,34 +393,53 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   // Flex places the right zone at the content edge required by `sticky; right: 0`. Sticky zones and
   // headers then follow the native scroll without JavaScript synchronization.
   return (
-    <>
+    <div
+      ref={frameRef}
+      id={id}
+      className={classNames("dgr-root", className)}
+      data-grid-frame=""
+      onClickCapture={blockWhileLoading}
+      onDoubleClickCapture={blockWhileLoading}
+      onPointerDownCapture={blockWhileLoading}
+      onPointerMoveCapture={blockWhileLoading}
+      onPointerUpCapture={blockWhileLoading}
+      onBlurCapture={blockWhileLoading}
+      onKeyDownCapture={(event) => {
+        if (event.key !== "Tab") blockWhileLoading(event);
+      }}
+      style={{
+        ...style,
+        position: "relative",
+        isolation: "isolate",
+        boxSizing: "border-box",
+      }}
+    >
       <div
         ref={scrollRef}
-        id={id}
-        className={className}
+        className="dgr-scroller"
+        data-grid-scroller=""
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy}
+        aria-busy={loading}
+        inert={loading || undefined}
         tabIndex={0}
-        onPointerDown={onPointerDown}
+        onPointerDown={(event) => {
+          capturedPointerRef.current = event.pointerId;
+          onPointerDown(event);
+        }}
         onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
+        onPointerUp={(event) => {
+          capturedPointerRef.current = null;
+          onPointerUp(event);
+        }}
         onLostPointerCapture={onLostPointerCapture}
         onKeyDown={onKeyDown}
-        style={{
-          ...style,
-          height: "100%",
-          overflow: "auto",
-          position: "relative",
-          outline: "none",
-          userSelect: "none",
-        }}
       >
         <div
+          className="dgr-content"
           style={{
-            display: "flex",
             width: totalWidth,
             height: rowHeight + totalHeight,
-            position: "relative",
           }}
         >
           {enableRowSelection && (
@@ -385,7 +452,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
               rowHeight={rowHeight}
               allRowIds={rowIds}
               onSelectedRowIdsChange={updateSelectedRows}
-              disabled={rowSelectionReadOnly}
+              disabled={loading || rowSelectionReadOnly}
               strongDivider={left.total === 0}
             />
           )}
@@ -418,13 +485,27 @@ export function DataGrid<T>(props: DataGridProps<T>) {
         </div>
       </div>
 
+      <GridStatusLayer
+        hasResult={hasResult}
+        rowCount={rows.length}
+        loading={loading}
+        rowHeight={rowHeight}
+        totalWidth={totalWidth}
+        loadingIndicator={loadingIndicator}
+        loadingLabel={loadingLabel}
+        emptyContent={emptyContent}
+      />
+
       {/* The body portal escapes the scroll clip. Only this leaf
           subscribes to the edit store; the windowed body above never re-renders on edit. */}
       <EditorPortal
+        frameRef={frameRef}
+        loading={loading}
         editStore={editStore}
         scrollRef={scrollRef}
         columns={columns}
         rows={rows}
+        rowIndexById={rowIndexById}
         getRowId={getRowId}
         geom={geom}
         gutterW={gutterW}
@@ -437,6 +518,6 @@ export function DataGrid<T>(props: DataGridProps<T>) {
         cancel={cancelEdit}
         commitAndMove={commitAndMove}
       />
-    </>
+    </div>
   );
 }

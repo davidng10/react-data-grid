@@ -1,16 +1,15 @@
 import { useCallback, useMemo, useState } from "react";
 import { Button, Select } from "antd";
+import { Link } from "react-router";
 
 import { DataGrid } from "../../data-grid";
 import { ControlPanel } from "../ControlPanel";
-import { PerfOverlay } from "../PerfOverlay";
 import { STRESS, WORDS, makeColumns, makeRows } from "../fixtures";
 
 import type { CellCommit, ColumnId, FrozenZone } from "../../data-grid";
 import type { DemoColumn, DemoRow } from "../fixtures";
 
 const MAX_FREEZE_PER_SIDE = 4;
-const PERF_STATS = { rows: STRESS.rows, cols: STRESS.cols };
 
 // Demo-only: AntD lives ONLY here (a devDependency), never in the grid. The grid stays headless —
 // this column proves the `renderEditor` override path with a real third-party component.
@@ -186,6 +185,9 @@ export function GridPlayground() {
         }}
       >
         <strong style={{ fontSize: 14 }}>Data grid</strong>
+        <Link to="/loading" style={{ fontSize: 12, color: "#57534e" }}>
+          Loading demo
+        </Link>
         <span
           style={{
             fontSize: 11,
@@ -231,8 +233,6 @@ export function GridPlayground() {
           onCellCommit={onCellCommit}
         />
       </div>
-
-      <PerfOverlay getStats={() => PERF_STATS} />
     </div>
   );
 }

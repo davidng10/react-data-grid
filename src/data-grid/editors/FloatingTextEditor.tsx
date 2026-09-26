@@ -3,6 +3,8 @@
 
 import { useId, useLayoutEffect, useRef } from "react";
 
+import { EDITOR_THEME_CHANGE } from "../internal/theme";
+
 import type { KeyboardEvent } from "react";
 import type { EditStatus, SelectOption } from "../core/types";
 
@@ -44,9 +46,15 @@ export function FloatingTextEditor(props: {
   useLayoutEffect(() => {
     const ta = ref.current;
     if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.max(rowHeight, ta.scrollHeight)}px`;
-  }, [value, rowHeight]);
+    const resize = () => {
+      ta.style.height = "auto";
+      ta.style.height = `${Math.max(rowHeight, ta.scrollHeight)}px`;
+    };
+    resize();
+    const host = ta.closest(".dgr-editor-host");
+    host?.addEventListener(EDITOR_THEME_CHANGE, resize);
+    return () => host?.removeEventListener(EDITOR_THEME_CHANGE, resize);
+  }, [value, rowHeight, width]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -69,6 +77,7 @@ export function FloatingTextEditor(props: {
   return (
     <>
       <textarea
+        className="dgr-editor-input"
         ref={ref}
         value={value}
         rows={1}
@@ -79,34 +88,16 @@ export function FloatingTextEditor(props: {
         onKeyDown={onKeyDown}
         onBlur={() => props.onBlur()}
         style={{
-          display: "block",
           minWidth: width,
           maxWidth,
-          boxSizing: "border-box",
-          border: "none",
-          outline: "none",
-          resize: "none",
-          padding: "5px 9px",
-          font: "13px/1.4 system-ui, sans-serif",
-          background: "transparent",
-          color: "#1c1917",
-          overflow: "hidden",
         }}
       />
       {hasError && api.error != null && (
         <div
+          className="dgr-editor-error"
           id={errorId}
           role="alert"
-          style={{
-            maxWidth,
-            boxSizing: "border-box",
-            padding: "4px 9px 6px",
-            borderTop: "1px solid #fecaca",
-            borderRadius: "0 0 3px 3px",
-            font: "12px/1.4 system-ui, sans-serif",
-            color: "#dc2626",
-            background: "#fef2f2",
-          }}
+          style={{ maxWidth }}
         >
           {String(api.error)}
         </div>
@@ -130,6 +121,7 @@ export function NativeSelectEditor(props: {
   // Borderless/transparent — fills the grid-owned host panel.
   return (
     <select
+      className="dgr-editor-input"
       autoFocus
       value={value}
       onChange={(e) => {
@@ -142,15 +134,7 @@ export function NativeSelectEditor(props: {
           props.onEscape();
         }
       }}
-      style={{
-        minWidth: width,
-        boxSizing: "border-box",
-        padding: "4px 6px",
-        font: "13px/1.4 system-ui, sans-serif",
-        border: "none",
-        outline: "none",
-        background: "transparent",
-      }}
+      style={{ minWidth: width }}
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>

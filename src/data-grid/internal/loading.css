@@ -1,0 +1,101 @@
+.dgr-loading-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  cursor: default;
+  border-radius: inherit;
+  touch-action: none;
+}
+
+.dgr-loading-layer[data-grid-state="refreshing"] {
+  background: var(--dgr-loading-overlay-background, rgb(255 255 255 / 65%));
+}
+
+.dgr-loading-body,
+.dgr-empty-content {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.dgr-empty-content,
+.dgr-loading-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.dgr-empty-content {
+  z-index: 1;
+  padding: 16px;
+  box-sizing: border-box;
+  color: var(--dgr-empty-color, #78716c);
+  line-height: 1.5;
+}
+
+.dgr-loading-indicator {
+  width: 100%;
+  height: 100%;
+  color: var(--dgr-loading-indicator-color, #57534e);
+}
+
+.dgr-loading-spinner {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: dgr-loading-spin 800ms linear infinite;
+}
+
+/* Only the initial-load bars pulse. The opaque backing and virtualization-gap fallback stay still. */
+.dgr-loading-layer[data-grid-state="initial-loading"] .dgr-skeleton-bars {
+  filter: brightness(0.94);
+  animation: dgr-skeleton-pulse 1600ms ease-in-out infinite;
+}
+
+.dgr-status-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dgr-draft-notice {
+  position: absolute;
+  inset: auto 8px 8px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--dgr-frozen-divider-color, #d6d3d1);
+  border-radius: 4px;
+  background: var(--dgr-background, #fff);
+  color: var(--dgr-text-color, #44403c);
+  line-height: 1.5;
+}
+
+@keyframes dgr-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes dgr-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
