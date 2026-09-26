@@ -154,7 +154,7 @@ The grid owns the editor frame. `--dgr-editor-padding` styles built-in controls;
 own their content padding, controls, focus handling, and contrast. Keep popups inside the editor
 host to avoid outside-click commits. A custom control can use inherited tokens and `font: inherit`.
 
-## Examples and evidence
+## Examples
 
 Run `pnpm dev` and visit `/styling` for independent day/night grids, conditional frozen and center
 cells, density/type controls, initial/refresh/empty states, delayed or failed saves, a custom Status
@@ -162,6 +162,10 @@ editor, and timed theme/override changes during editing. `/styling-check.html` i
 reset and includes ordinary controls outside the grid. This is a source-development fixture, not
 proof of npm packaging.
 
-See [dated verification](./STYLING_VERIFICATION.md) for actual checks and remaining browser/device
-limitations. React 18, Next.js, package delivery, accessibility, and physical mobile support remain
-unverified release targets.
+React 18, Next.js, package delivery, accessibility, and physical mobile support remain unverified
+release targets.
+
+Selection controls can also be replaced through `renderSelectionCheckbox`; see the
+[integration guide](./INTEGRATION.md#replaceable-selection-checkboxes). `.dgr-checkbox` styles the
+native default only. Replacement controls own their visuals and focus indicator while the gutter
+retains its dimensions and selection semantics.

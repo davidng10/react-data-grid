@@ -22,6 +22,8 @@ export interface ColumnDragHandlers {
   onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => boolean;
   onPointerUp: (e: ReactPointerEvent<HTMLDivElement>) => boolean;
   onLostPointerCapture: () => void;
+  /** Includes a claimed press before the visual gesture starts. */
+  isActive: () => boolean;
 }
 
 // Handles within-zone column dragging. Store updates redraw only the indicator, and each handler
@@ -196,5 +198,11 @@ export function useColumnDrag<T>(args: {
     }
   };
 
-  return { onPointerDown, onPointerMove, onPointerUp, onLostPointerCapture };
+  return {
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onLostPointerCapture,
+    isActive: () => Boolean(dragSourceRef.current),
+  };
 }

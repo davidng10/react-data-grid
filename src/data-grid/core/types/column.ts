@@ -39,7 +39,7 @@ export interface HeaderRenderContext<T> {
   reorderable: boolean;
 }
 
-/** Edit context. The editor owns input state; the grid owns commit behavior. */
+/** Edit context. The grid owns the draft and commit behavior; custom content owns its controls. */
 export interface CellEditContext<T> extends CellRenderContext<T> {
   draft: unknown;
   setDraft: (next: unknown) => void;

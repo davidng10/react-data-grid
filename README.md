@@ -9,7 +9,8 @@ selection, editing, and pointer interactions off the main cell-rendering path.
 - Left and right frozen columns
 - Cell focus, range selection, and checkbox row selection
 - Keyboard navigation and type-to-edit
-- Custom cell, header, and editor renderers
+- Custom cell, header, editor, and selection-checkbox renderers
+- Stable-ID imperative cell focus
 - Synchronous validation and asynchronous commits
 - Within-zone column reordering
 - Column resizing with optional persistence callbacks
@@ -202,5 +203,14 @@ Use `rowHeight` and column widths for geometry; CSS controls appearance.
 
 See the [styling contract](./docs/STYLING.md) for tokens, defaults, parts, callback contexts, and
 portal synchronization limits. `/styling` demonstrates two independent themes; `/styling-check.html`
-runs the same examples without the playground reset. [Verification notes](./docs/STYLING_VERIFICATION.md)
-record the checks and compatibility limits.
+runs the same examples without the playground reset.
+
+## Integration APIs
+
+See the [integration guide](./docs/INTEGRATION.md) for controlled/uncontrolled/read-only state,
+stable identity, editing and persistence, custom selection controls, and the `DataGridHandle.focusCell`
+command. Run `pnpm dev` and open `/integration` for focused examples using only the public entry.
+
+npm is the first-release distribution target; this repository currently demonstrates source usage.
+Stores and geometry helpers remain private. React 18/19 and Next.js are compatibility targets;
+React 18 and Next.js have not yet been verified.

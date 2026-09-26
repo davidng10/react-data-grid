@@ -16,4 +16,9 @@ export type { CellRange, GridSelection } from "./selection";
 
 export type { EditStatus, CellCommit, CellCommitFailure } from "./editing";
 
-export type { DataGridProps } from "./grid";
+export type {
+  DataGridProps,
+  SelectionCheckboxProps,
+  DataGridHandle,
+  FocusCellResult,
+} from "./grid";

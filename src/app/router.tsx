@@ -1,6 +1,7 @@
 import { createBrowserRouter } from "react-router";
 
 import { GridPlayground } from "../playground/pages/GridPlayground";
+import { IntegrationPlayground } from "../playground/pages/IntegrationPlayground";
 import { LoadingPlayground } from "../playground/pages/LoadingPlayground";
 import { StylingPlayground } from "../playground/pages/StylingPlayground";
 
@@ -10,5 +11,6 @@ import { StylingPlayground } from "../playground/pages/StylingPlayground";
 export const router = createBrowserRouter([
   { path: "/", element: <GridPlayground /> },
   { path: "/styling", element: <StylingPlayground /> },
+  { path: "/integration", element: <IntegrationPlayground /> },
   { path: "/loading", element: <LoadingPlayground /> },
 ]);

@@ -15,6 +15,8 @@ export interface ColumnResizeHandlers {
   onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => boolean;
   onPointerUp: (e: ReactPointerEvent<HTMLDivElement>) => boolean;
   onLostPointerCapture: () => void;
+  /** Includes a claimed press before the visual gesture starts. */
+  isActive: () => boolean;
   /** Abort without committing the guide (for application loading). */
   cancel: () => void;
 }
@@ -138,5 +140,6 @@ export function useColumnResize<T>(args: {
     onPointerUp,
     onLostPointerCapture,
     cancel,
+    isActive: () => Boolean(sourceRef.current),
   };
 }

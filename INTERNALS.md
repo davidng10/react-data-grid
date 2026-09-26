@@ -164,3 +164,18 @@ attributes and listens for resize/system-color-scheme changes, coalescing reads 
 Cleanup cancels queued work and releases listeners. Keep the allowlist and public token table in
 [docs/STYLING.md](./docs/STYLING.md) aligned. Hidden loading editors pause their subscription;
 resumed/remounted editors read a fresh snapshot and remeasure without discarding drafts.
+
+## Public customization and commands
+
+`DataGrid` uses a generic-preserving `forwardRef` boundary. Its `useImperativeHandle` exposes only
+`focusCell`: resolve stable row ID, resolve column, validate selectability, then check loading,
+edit state and each gesture's `isActive` query before changing anything. Reorder's query includes
+its pre-threshold source. Success uses the same store and scrolling helper as keyboard navigation.
+Reconcile selection in a layout effect before exposing the current handle so a parent's layout-effect
+command cannot be remapped later against old row indices. No cell subscribes to the handle.
+
+`RowGutter` owns checkbox replacement rendering and native defaults. Retained control callbacks
+resolve through a layout-effect-updated dispatcher and the latest store snapshot. The dispatcher
+checks loading/read-only and current IDs; the gutter contains keyboard and pointer-down events so
+checkbox activation does not start cell navigation or editing. Selection semantics remain grid-owned.
+Public consumer responsibilities are in [docs/INTEGRATION.md](./docs/INTEGRATION.md).

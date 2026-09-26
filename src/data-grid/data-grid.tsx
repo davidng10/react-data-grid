@@ -1,6 +1,13 @@
 import "./internal/grid.css";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { GridStatusLayer } from "./components/GridStatusLayer";
 import { GridZone } from "./components/GridZone";
@@ -27,9 +34,20 @@ import {
 } from "./internal/constants";
 import { composePointerGestures } from "./internal/pointer-gestures";
 
-import type { SyntheticEvent } from "react";
+import type {
+  ForwardedRef,
+  ReactElement,
+  RefAttributes,
+  SyntheticEvent,
+} from "react";
 import type { PlacedCol } from "./components/GridZone";
-import type { CellCoord, ColumnId, DataGridProps, RowId } from "./core/types";
+import type {
+  CellCoord,
+  ColumnId,
+  DataGridHandle,
+  DataGridProps,
+  RowId,
+} from "./core/types";
 
 export type { DataGridProps } from "./core/types";
 
@@ -61,7 +79,10 @@ function reconcileColumnOrder(
   return next;
 }
 
-export function DataGrid<T>(props: DataGridProps<T>) {
+function DataGridInner<T>(
+  props: DataGridProps<T>,
+  ref: ForwardedRef<DataGridHandle>
+) {
   const {
     rows: suppliedRows,
     loading = false,
@@ -74,6 +95,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     overscanRows = DEFAULT_OVERSCAN_ROWS,
     overscanColumns = DEFAULT_OVERSCAN_COLS,
     enableRowSelection = false,
+    renderSelectionCheckbox,
     selectedRowIds,
     defaultSelectedRowIds,
     onSelectedRowIdsChange,
@@ -187,7 +209,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   } = layout;
 
   // Forward store changes without subscribing the windowed body through React state.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!onSelectionChange) return;
     return store.subscribe(() => onSelectionChange(store.getSnapshot()));
   }, [store, onSelectionChange]);
@@ -195,7 +217,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
   // Reconcile stable row identities and column ids without putting selection on the cell render
   // path. Row reordering preserves focus/range; removed rows or columns clear invalid coordinates.
   const previousRowIdsRef = useRef<readonly RowId[]>(rowIds);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previousRowIds = previousRowIdsRef.current;
     const current = store.getSnapshot();
     const mapCell = (cell: CellCoord | null): CellCoord | null => {
@@ -299,6 +321,39 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     helpers,
     beginEdit,
   });
+
+  // Refresh commands after reconciliation, before exposing the handle or running parent layout
+  // effects. Updating only at commit keeps interrupted renders out of imperative commands.
+  const focusCellRef = useRef<DataGridHandle["focusCell"] | null>(null);
+  useLayoutEffect(() => {
+    focusCellRef.current = ({ rowId, columnId }) => {
+      const rowIndex = rowIndexById.get(rowId);
+      if (rowIndex === undefined) return { ok: false, reason: "row-not-found" };
+      const column = columns.find((candidate) => candidate.id === columnId);
+      if (!column) return { ok: false, reason: "column-not-found" };
+      if (!resolveColumnCapabilities(column).selectable)
+        return { ok: false, reason: "not-selectable" };
+      if (
+        loading ||
+        editStore.getSnapshot().status !== "idle" ||
+        colResize.isActive() ||
+        colDrag.isActive() ||
+        dragSel.isActive()
+      )
+        return { ok: false, reason: "busy" };
+      const cell = { rowIndex, columnId };
+      store.focusCell(cell);
+      scrollRef.current?.focus({ preventScroll: true });
+      scrollCellIntoView(cell);
+      return { ok: true };
+    };
+  });
+  // A stable handle lets callback refs store it in state without a render/ref-update loop.
+  useImperativeHandle(
+    ref,
+    () => ({ focusCell: (target) => focusCellRef.current!(target) }),
+    []
+  );
 
   // Earlier gestures get first refusal; all gestures clean up after lost pointer capture.
   const { onPointerDown, onPointerMove, onPointerUp, onLostPointerCapture } =
@@ -453,6 +508,8 @@ export function DataGrid<T>(props: DataGridProps<T>) {
               allRowIds={rowIds}
               onSelectedRowIdsChange={updateSelectedRows}
               disabled={loading || rowSelectionReadOnly}
+              readOnly={rowSelectionReadOnly}
+              renderSelectionCheckbox={renderSelectionCheckbox}
               strongDivider={left.total === 0}
             />
           )}
@@ -521,3 +578,9 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     </div>
   );
 }
+
+// forwardRef supports React 18 and 19. Preserve inference of T at JSX call sites instead of
+// exposing forwardRef's erased unknown row type. The runtime handle is independent of T.
+export const DataGrid = forwardRef(DataGridInner) as <T>(
+  props: DataGridProps<T> & RefAttributes<DataGridHandle>
+) => ReactElement;

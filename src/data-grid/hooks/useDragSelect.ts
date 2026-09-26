@@ -13,6 +13,8 @@ export interface DragSelectHandlers {
   onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
   onPointerUp: (e: ReactPointerEvent<HTMLDivElement>) => void;
   onLostPointerCapture: () => void;
+  /** Includes a claimed press before the visual gesture starts. */
+  isActive: () => boolean;
 }
 
 // Handles cell focus, drag selection, edge auto-scroll, and click-to-edit. Updates go through the
@@ -143,5 +145,11 @@ export function useDragSelect<T>(args: {
     pendingEditRef.current = null;
   };
 
-  return { onPointerDown, onPointerMove, onPointerUp, onLostPointerCapture };
+  return {
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onLostPointerCapture,
+    isActive: () => Boolean(draggingRef.current),
+  };
 }

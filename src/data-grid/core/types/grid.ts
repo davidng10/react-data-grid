@@ -6,6 +6,30 @@ import type { CellCommit, CellCommitFailure } from "./editing";
 import type { ColumnId, RowId } from "./ids";
 import type { GridSelection } from "./selection";
 
+/** Result of accepting a focus command, not a guarantee that a virtualized cell has mounted. */
+export type FocusCellResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "row-not-found" | "column-not-found" | "not-selectable" | "busy";
+    };
+
+export interface DataGridHandle {
+  /** Validate row, column, selectability, then busy; failures have no side effects. */
+  focusCell: (target: { rowId: RowId; columnId: ColumnId }) => FocusCellResult;
+}
+
+/** Replacement control state. onChange requests the grid's toggle, including mixed → clear. */
+export type SelectionCheckboxProps = {
+  checked: boolean;
+  indeterminate: boolean;
+  /** Effective interaction gate: loading, read-only, or no rows for select-all. */
+  disabled: boolean;
+  readOnly: boolean;
+  "aria-label": string;
+  onChange: () => void;
+} & ({ kind: "all" } | { kind: "row"; rowId: RowId; rowIndex: number });
+
 export interface DataGridProps<T> {
   /** null/undefined means no result is available; [] is a completed empty result. */
   rows: readonly T[] | null | undefined;
@@ -25,6 +49,8 @@ export interface DataGridProps<T> {
   overscanColumns?: number;
 
   enableRowSelection?: boolean;
+  /** Replaces row and select-all controls. The grid retains selection semantics. */
+  renderSelectionCheckbox?: (props: SelectionCheckboxProps) => ReactNode;
   selectedRowIds?: ReadonlySet<RowId>;
   defaultSelectedRowIds?: ReadonlySet<RowId>;
   onSelectedRowIdsChange?: (rowIds: ReadonlySet<RowId>) => void;
