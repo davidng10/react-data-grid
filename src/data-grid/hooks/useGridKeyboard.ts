@@ -19,6 +19,9 @@ export function useGridKeyboard<T>(args: {
   const { columnOrder, placementMap, geom } = layout;
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (e.target !== e.currentTarget) return;
+    if (geom.rowCount === 0) return;
     // While an editor is open it owns the keyboard (it's focused inside the body portal, so its
     // keydowns don't even reach here — this is a belt-and-braces guard).
     if (editStore.getSnapshot().status !== "idle") return;
@@ -48,15 +51,52 @@ export function useGridKeyboard<T>(args: {
       }
     }
 
+    if (focused && ["Home", "End", "PageUp", "PageDown"].includes(e.key)) {
+      e.preventDefault();
+      let next: CellCoord;
+      if (e.key === "Home" || e.key === "End") {
+        next = stepCoord(
+          focused,
+          e.key === "Home" ? "left" : "right",
+          geom,
+          true
+        );
+        if (e.ctrlKey || e.metaKey)
+          next = {
+            ...next,
+            rowIndex: e.key === "Home" ? 0 : geom.rowCount - 1,
+          };
+      } else {
+        const page = Math.max(
+          1,
+          Math.floor(e.currentTarget.clientHeight / geom.rowHeight) - 1
+        );
+        next = {
+          ...focused,
+          rowIndex: Math.max(
+            0,
+            Math.min(
+              geom.rowCount - 1,
+              focused.rowIndex + (e.key === "PageDown" ? page : -page)
+            )
+          ),
+        };
+      }
+      if (e.shiftKey) store.extendTo(next);
+      else store.focusCell(next);
+      scrollCellIntoView(next);
+      return;
+    }
     const dir = ARROW_DIR[e.key];
     if (!dir || columnOrder.length === 0) return;
     e.preventDefault();
 
     if (!focused) {
       // First arrow just lands focus on the origin cell — the first SELECTABLE column.
-      const firstSelectable =
-        columnOrder.find((id) => placementMap.get(id)?.selectable !== false) ??
-        columnOrder[0];
+      const firstSelectable = columnOrder.find(
+        (id) => placementMap.get(id)?.selectable !== false
+      );
+      if (!firstSelectable) return;
       const origin: CellCoord = { rowIndex: 0, columnId: firstSelectable };
       store.focusCell(origin);
       scrollCellIntoView(origin);

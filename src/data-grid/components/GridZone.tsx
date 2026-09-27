@@ -1,5 +1,6 @@
 import { cellKey } from "../core/types/ids";
 import { PendingOverlay } from "../editors/PendingOverlay";
+import { gridCellId } from "../internal/accessibility";
 import { resolveColumnCapabilities } from "../internal/column-capabilities";
 import { readContent } from "../internal/read-content";
 import { Cell } from "./Cell";
@@ -37,6 +38,7 @@ export type PlacedCol<T> = {
 // Renders one zone's header, cells, and interaction overlays. Only overlays subscribe to stores, so
 // interaction updates do not re-render this windowed body.
 export function GridZone<T>(props: {
+  gridId: string;
   zone: Zone;
   placedCols: PlacedCol<T>[];
   /** Zone width → flex basis. */
@@ -107,6 +109,8 @@ export function GridZone<T>(props: {
           return (
             <HeaderCell
               key={pc.col.id}
+              id={gridCellId(props.gridId, null, pc.col.id)}
+              columnIndex={pc.columnIndex + 1 + (gutterW ? 1 : 0)}
               className={
                 typeof pc.col.headerClassName === "function"
                   ? pc.col.headerClassName(headerContext)
@@ -146,9 +150,19 @@ export function GridZone<T>(props: {
               width: pc.width,
               height: vr.size,
             };
+            const editable = resolveColumnCapabilities(pc.col).editable;
             return (
               <Cell
                 key={cellKey(rowId, pc.col.id)}
+                id={gridCellId(props.gridId, rowId, pc.col.id)}
+                rowIndex={vr.index}
+                columnIndex={pc.columnIndex}
+                ariaColumnIndex={pc.columnIndex + 1 + (gutterW ? 1 : 0)}
+                readOnly={
+                  !(typeof editable === "function"
+                    ? editable(context)
+                    : editable)
+                }
                 className={
                   typeof pc.col.cellClassName === "function"
                     ? pc.col.cellClassName(context)

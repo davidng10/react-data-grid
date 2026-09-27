@@ -45,7 +45,7 @@ columns. Tokens do not calculate contrast automatically.
 | `--dgr-header-border-color`        | `#e7e5e4`                                                    | Header/gutter right borders, pending spinner track              |
 | `--dgr-frozen-divider-color`       | `#d6d3d1`                                                    | Frozen dividers, header-row bottom edge, draft notice border    |
 | `--dgr-selection-background`       | `rgb(37 99 235 / 12%)`                                       | Range fill                                                      |
-| `--dgr-selection-border-color`     | `rgb(37 99 235 / 55%)`                                       | Range outline                                                   |
+| `--dgr-selection-border-color`     | `#2563eb`                                                    | Range outline                                                   |
 | `--dgr-focus-color`                | `#2563eb`                                                    | Focus ring and editor border                                    |
 | `--dgr-resize-indicator-color`     | `#2563eb`                                                    | Resize guide                                                    |
 | `--dgr-reorder-indicator-color`    | `#2563eb`                                                    | Column drop guide                                               |

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 
 import { DataGrid } from "../../data-grid";
@@ -58,6 +58,7 @@ function StatusEditor({ ctx }: { ctx: CellEditContext<Person> }) {
     <div
       style={{ minWidth: ctx.width, padding: 8 }}
       onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
         if (event.key === "Escape") {
           event.preventDefault();
           ctx.cancel();
@@ -126,6 +127,31 @@ const COLUMNS: Column<Person>[] = [
 
 export function IntegrationPlayground() {
   const ref = useRef<DataGridHandle>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() =>
+      setNarrow(element.clientWidth < 640)
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  // The application chooses responsive pinning; the grid never silently changes frozen props.
+  const columns = useMemo(
+    () =>
+      narrow
+        ? COLUMNS.map((column) =>
+            column.id === "status"
+              ? { ...column, frozen: undefined }
+              : column.id === "name"
+                ? { ...column, width: 120 }
+                : column
+          )
+        : COLUMNS,
+    [narrow]
+  );
   const [rows, setRows] = useState(PEOPLE);
   const [selectedRowIds, setSelectedRowIds] = useState<ReadonlySet<RowId>>(
     new Set([1])
@@ -189,13 +215,13 @@ export function IntegrationPlayground() {
       <p role="status">
         {result} · Selected rows: {selectedRowIds.size}
       </p>
-      <div className="loading-demo-grid">
+      <div className="loading-demo-grid" ref={containerRef}>
         <DataGrid
           ref={ref}
           rows={rows}
-          columns={COLUMNS}
+          columns={columns}
           getRowId={(row) => row.id}
-          rowHeight={40}
+          rowHeight={44}
           aria-label="Integration people"
           loading={loading}
           enableRowSelection
@@ -218,7 +244,8 @@ export function IntegrationPlayground() {
       <p>
         After a focus command, press Enter to edit Name or Status. Choose “Use
         Away” in the status popup, then save. Selection controls use Space;
-        read-only mode disables them.
+        read-only mode disables them. Below 640px this example unpins Status and
+        narrows Name to keep the center usable.
       </p>
     </main>
   );

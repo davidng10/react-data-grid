@@ -76,7 +76,7 @@ export function useCellEditing<T>(args: {
     loadingRef.current = loading;
   });
 
-  const returnFocus = () => scrollRef.current?.focus();
+  const returnFocus = () => scrollRef.current?.focus({ preventScroll: true });
   const findColumn = (id: ColumnId) => columns.find((c) => c.id === id);
   const correctiveTimerRef = useRef<number | null>(null);
   const correctiveValidationRef = useRef<() => void>(() => {});
@@ -300,9 +300,9 @@ export function useCellEditing<T>(args: {
   };
 
   // Implicit commit (blur / outside-click). Valid → save + close; invalid → discard + close. Either
-  // way the editor is gone on success; don't return focus when it stayed open (it never does here).
+  // way, preserve the outside focus destination rather than returning focus to the grid.
   const commitImplicit = () => {
-    if (startCommit(true)) returnFocus();
+    startCommit(true);
   };
 
   // Commit (optimistically), then advance the focused cell — Enter→down, Tab→right. We do NOT wait

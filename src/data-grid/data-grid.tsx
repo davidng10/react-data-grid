@@ -2,6 +2,8 @@ import "./internal/grid.css";
 
 import {
   forwardRef,
+  useEffect,
+  useId,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
@@ -9,6 +11,7 @@ import {
   useState,
 } from "react";
 
+import { GridAccessibility } from "./components/GridAccessibility";
 import { GridStatusLayer } from "./components/GridStatusLayer";
 import { GridZone } from "./components/GridZone";
 import { RowGutter } from "./components/RowGutter";
@@ -120,6 +123,7 @@ function DataGridInner<T>(
   const hasResult = suppliedRows != null;
   const rows = suppliedRows ?? EMPTY_ROWS;
 
+  const gridId = useId();
   const frameRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [store] = useState(() =>
@@ -356,8 +360,11 @@ function DataGridInner<T>(
   );
 
   // Earlier gestures get first refusal; all gestures clean up after lost pointer capture.
-  const { onPointerDown, onPointerMove, onPointerUp, onLostPointerCapture } =
-    composePointerGestures([colResize, colDrag, dragSel]);
+  const { onPointerDown, onPointerMove, onPointerUp } = composePointerGestures([
+    colResize,
+    colDrag,
+    dragSel,
+  ]);
 
   const { onKeyDown } = useGridKeyboard({
     store,
@@ -368,23 +375,85 @@ function DataGridInner<T>(
   });
 
   const capturedPointerRef = useRef<number | null>(null);
-  // A loading transition aborts active gestures before another frame or release can commit them.
-  // The normal resize lost-capture path commits its guide, so loading uses explicit cancellation.
-  useLayoutEffect(() => {
-    if (!loading) return;
+  const cancelGestures = () => {
     colResize.cancel();
     colDrag.onLostPointerCapture();
     dragSel.onLostPointerCapture();
-    const scroller = scrollRef.current;
-    const pointerId = capturedPointerRef.current;
+    const pointer = capturedPointerRef.current;
     capturedPointerRef.current = null;
+    if (pointer != null && scrollRef.current?.hasPointerCapture(pointer))
+      scrollRef.current.releasePointerCapture(pointer);
+  };
+  const cancelGesturesRef = useRef(cancelGestures);
+  useLayoutEffect(() => {
+    cancelGesturesRef.current = cancelGestures;
+  });
+  const gestureInputs = useRef({
+    rowIds,
+    columns,
+    resolvedOrder,
+    resolvedWidths,
+    resizeEnabled,
+    reorderable,
+    rowHeight,
+  });
+  useLayoutEffect(() => {
+    const previous = gestureInputs.current;
+    gestureInputs.current = {
+      rowIds,
+      columns,
+      resolvedOrder,
+      resolvedWidths,
+      resizeEnabled,
+      reorderable,
+      rowHeight,
+    };
     if (
-      scroller &&
-      pointerId != null &&
-      scroller.hasPointerCapture(pointerId)
-    ) {
-      scroller.releasePointerCapture(pointerId);
-    }
+      !loading &&
+      (previous.rowIds === rowIds ||
+        (previous.rowIds.length === rowIds.length &&
+          previous.rowIds.every((id, index) => id === rowIds[index]))) &&
+      previous.columns === columns &&
+      previous.resolvedOrder === resolvedOrder &&
+      previous.resolvedWidths === resolvedWidths &&
+      previous.resizeEnabled === resizeEnabled &&
+      previous.reorderable === reorderable &&
+      previous.rowHeight === rowHeight
+    )
+      return;
+    cancelGesturesRef.current();
+  }, [
+    loading,
+    rowIds,
+    columns,
+    resolvedOrder,
+    resolvedWidths,
+    resizeEnabled,
+    reorderable,
+    rowHeight,
+  ]);
+
+  // A second contact anywhere (including the gutter or outside the frame) aborts manipulation.
+  useEffect(() => {
+    const onAdditionalPointer = (event: PointerEvent) => {
+      if (
+        capturedPointerRef.current != null &&
+        event.pointerId !== capturedPointerRef.current
+      ) {
+        cancelGestures();
+      }
+    };
+    const onBlur = () => {
+      cancelGestures();
+    };
+    document.addEventListener("pointerdown", onAdditionalPointer, true);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("resize", onBlur);
+    return () => {
+      document.removeEventListener("pointerdown", onAdditionalPointer, true);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("resize", onBlur);
+    };
   });
 
   const blockWhileLoading = (event: SyntheticEvent) => {
@@ -428,6 +497,7 @@ function DataGridInner<T>(
   }));
 
   const zoneProps = {
+    gridId,
     gutterW,
     rowHeight,
     totalHeight,
@@ -473,23 +543,94 @@ function DataGridInner<T>(
         ref={scrollRef}
         className="dgr-scroller"
         data-grid-scroller=""
-        aria-label={ariaLabel}
+        role="grid"
+        aria-rowcount={rows.length + 1}
+        aria-colcount={layout.columnOrder.length + (enableRowSelection ? 1 : 0)}
+        aria-multiselectable="true"
+        aria-describedby={`${gridId}-instructions`}
+        aria-label={ariaLabel ?? (ariaLabelledBy ? undefined : "Data grid")}
         aria-labelledby={ariaLabelledBy}
         aria-busy={loading}
         inert={loading || undefined}
         tabIndex={0}
         onPointerDown={(event) => {
+          if (
+            capturedPointerRef.current != null ||
+            (event.pointerType === "touch" && event.isPrimary === false)
+          ) {
+            cancelGestures();
+            return;
+          }
+          if (event.button !== 0 || event.pointerType === "pen") return;
+          if (
+            event.target instanceof Element &&
+            event.target.closest(
+              'button, input, select, textarea, a, [contenteditable="true"], [role="button"], [role="checkbox"]'
+            )
+          )
+            return;
           capturedPointerRef.current = event.pointerId;
-          onPointerDown(event);
+          if (event.pointerType === "touch") dragSel.onPointerDown(event);
+          else onPointerDown(event);
         }}
-        onPointerMove={onPointerMove}
+        onPointerMove={(event) => {
+          if (capturedPointerRef.current === event.pointerId)
+            onPointerMove(event);
+        }}
         onPointerUp={(event) => {
+          if (capturedPointerRef.current !== event.pointerId) return;
           capturedPointerRef.current = null;
           onPointerUp(event);
         }}
-        onLostPointerCapture={onLostPointerCapture}
-        onKeyDown={onKeyDown}
+        onPointerCancel={() => {
+          cancelGestures();
+        }}
+        onLostPointerCapture={() => {
+          if (capturedPointerRef.current != null) {
+            cancelGestures();
+          }
+        }}
+        onFocus={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (
+            loading ||
+            rows.length === 0 ||
+            capturedPointerRef.current != null
+          )
+            return;
+          const current = store.getSnapshot().focusedCell;
+          if (current) {
+            scrollCellIntoView(current);
+            return;
+          }
+          const columnId = layout.columnOrder.find(
+            (id) => layout.placementMap.get(id)?.selectable !== false
+          );
+          if (columnId) {
+            const cell = { rowIndex: 0, columnId };
+            store.focusCell(cell);
+            scrollCellIntoView(cell);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            cancelGestures();
+          }
+          onKeyDown(event);
+        }}
       >
+        <GridAccessibility
+          gridId={gridId}
+          scrollRef={scrollRef}
+          store={store}
+          rowIds={rowIds}
+          vRows={vRows}
+          renderedColumns={[...leftPlaced, ...centerPlaced, ...rightPlaced].map(
+            (pc) => pc.col.id
+          )}
+          geom={geom}
+          gutter={enableRowSelection}
+        />
         <div
           className="dgr-content"
           style={{
@@ -499,6 +640,7 @@ function DataGridInner<T>(
         >
           {enableRowSelection && (
             <RowGutter
+              gridId={gridId}
               store={store}
               vRows={vRows}
               rowIdAt={rowIdAt}

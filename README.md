@@ -214,3 +214,10 @@ command. Run `pnpm dev` and open `/integration` for focused examples using only 
 npm is the first-release distribution target; this repository currently demonstrates source usage.
 Stores and geometry helpers remain private. React 18/19 and Next.js are compatibility targets;
 React 18 and Next.js have not yet been verified.
+
+## Accessibility and interaction
+
+See [keyboard, touch and accessibility guidance](./docs/ACCESSIBILITY.md) for navigation, native control
+tab order, editor behavior, remaining touch/column interaction gaps and the manual test matrix.
+Source semantics and keyboard navigation are implemented; target-browser, physical-device and
+screen-reader support remains unverified. The `/integration` example adapts frozen columns to narrow containers.

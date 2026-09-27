@@ -180,7 +180,7 @@ textarea.dgr-editor-input {
 }
 :where(.dgr-selection-range) {
   background: var(--dgr-selection-background, rgb(37 99 235 / 12%));
-  border: 1px solid var(--dgr-selection-border-color, rgb(37 99 235 / 55%));
+  border: 1px solid var(--dgr-selection-border-color, #2563eb);
 }
 :where(.dgr-focus-ring) {
   border: 1px solid var(--dgr-focus-color, #2563eb);
@@ -265,4 +265,79 @@ select.dgr-editor-input {
 }
 :where(.dgr-zone[data-zone="right"]) {
   box-shadow: -1px 0 0 0 var(--dgr-frozen-divider-color, #d6d3d1);
+}
+
+/* Accessibility helpers have no geometry and do not duplicate cell content. */
+.dgr-semantic-rows {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.dgr-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* Logical cell focus survives virtualization. Do not use aria-activedescendant
+   here: it disappears when scrolling unmounts its target. */
+.dgr-scroller:focus-visible:not([data-has-focused-cell]) {
+  outline: 2px solid var(--dgr-focus-color, #2563eb);
+  outline-offset: -2px;
+}
+.dgr-checkbox:focus-visible,
+.dgr-editor-actions button:focus-visible {
+  outline: 2px solid var(--dgr-focus-color, #2563eb);
+  outline-offset: -2px;
+}
+.dgr-editor-host[data-default-editor] {
+  overflow: auto;
+}
+.dgr-editor-actions {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+}
+.dgr-editor-actions button {
+  min-height: 44px;
+  min-width: 44px;
+  font: inherit;
+}
+.dgr-checkbox {
+  width: 24px;
+  height: 24px;
+}
+@media (forced-colors: active) {
+  .dgr-focus-ring,
+  .dgr-selection-range {
+    border: 2px solid Highlight;
+  }
+  .dgr-scroller:focus-visible:not([data-has-focused-cell]) {
+    outline-color: Highlight;
+  }
+  .dgr-editor-host,
+  .dgr-error-cell {
+    border: 2px solid CanvasText;
+  }
+  .dgr-resize-indicator,
+  .dgr-reorder-indicator {
+    background: Highlight;
+    forced-color-adjust: none;
+  }
+}
+.dgr-editor-actions button {
+  color: inherit;
+  background: var(--dgr-background, #fff);
+  border: 1px solid var(--dgr-frozen-divider-color, #d6d3d1);
+  border-radius: 4px;
+  padding: 6px 10px;
+}
+.dgr-checkbox-target {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }

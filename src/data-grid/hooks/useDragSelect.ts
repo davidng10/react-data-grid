@@ -31,6 +31,13 @@ export function useDragSelect<T>(args: {
   const { leftBand, right } = layout;
   const { hitTest } = helpers;
 
+  const tapRef = useRef<{
+    x: number;
+    y: number;
+    scrollTop: number;
+    scrollLeft: number;
+    cell: CellCoord;
+  } | null>(null);
   const draggingRef = useRef(false);
   const lastHitRef = useRef<CellCoord | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
@@ -87,7 +94,16 @@ export function useDragSelect<T>(args: {
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     const cell = hitTest(e.clientX, e.clientY);
     if (!cell) return; // header / gutter / outside — let native handlers (e.g. checkboxes) run
-    scrollRef.current?.focus();
+    if (e.pointerType === "touch") {
+      tapRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        scrollTop: scrollRef.current?.scrollTop ?? 0,
+        scrollLeft: scrollRef.current?.scrollLeft ?? 0,
+        cell,
+      };
+      return;
+    }
     // Was this exact cell already the (single) focus before this press? If so, a plain click on it
     // should open the editor (resolved on pointer-up, if the pointer didn't drag).
     const prev = store.getSnapshot();
@@ -97,6 +113,7 @@ export function useDragSelect<T>(args: {
       prev.focusedCell != null &&
       prev.focusedCell.rowIndex === cell.rowIndex &&
       prev.focusedCell.columnId === cell.columnId;
+    scrollRef.current?.focus({ preventScroll: true });
     pendingEditRef.current = alreadyFocused ? cell : null;
     movedRef.current = false;
     if (e.shiftKey) store.extendTo(cell);
@@ -111,6 +128,11 @@ export function useDragSelect<T>(args: {
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (
+      tapRef.current &&
+      Math.hypot(e.clientX - tapRef.current.x, e.clientY - tapRef.current.y) > 8
+    )
+      tapRef.current = null;
     if (!draggingRef.current) return;
     pointerRef.current = { x: e.clientX, y: e.clientY };
     extendDrag(hitTest(e.clientX, e.clientY));
@@ -127,8 +149,20 @@ export function useDragSelect<T>(args: {
   };
 
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const tap = tapRef.current;
+    tapRef.current = null;
+    if (
+      tap &&
+      Math.hypot(e.clientX - tap.x, e.clientY - tap.y) <= 8 &&
+      tap.scrollTop === scrollRef.current?.scrollTop &&
+      tap.scrollLeft === scrollRef.current?.scrollLeft
+    ) {
+      store.focusCell(tap.cell);
+      scrollRef.current?.focus({ preventScroll: true });
+    }
     stopDrag();
-    scrollRef.current?.releasePointerCapture(e.pointerId);
+    if (scrollRef.current?.hasPointerCapture(e.pointerId))
+      scrollRef.current.releasePointerCapture(e.pointerId);
     // A click (no drag) on the already-focused cell enters edit mode.
     const editCell = pendingEditRef.current;
     pendingEditRef.current = null;
@@ -142,6 +176,7 @@ export function useDragSelect<T>(args: {
   // plain hover. An interrupted gesture is an abort, so we drop the pending click-to-edit.
   const onLostPointerCapture = () => {
     stopDrag();
+    tapRef.current = null;
     pendingEditRef.current = null;
   };
 
@@ -150,6 +185,6 @@ export function useDragSelect<T>(args: {
     onPointerMove,
     onPointerUp,
     onLostPointerCapture,
-    isActive: () => Boolean(draggingRef.current),
+    isActive: () => Boolean(draggingRef.current || tapRef.current),
   };
 }

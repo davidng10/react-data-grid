@@ -234,6 +234,43 @@ On success, update authoritative `rows` with the persisted value before resolvin
 otherwise the overlay clears to the old accessor value. With no commit handler, acceptance simply
 closes the editor and leaves rows unchanged. Loading does not cancel pending saves.
 
+## Application-owned save-error feedback
+
+The grid provides no automatic save-error announcement. Use `onCellCommitError` to show a useful,
+accessible message in your application. Keep its live region mounted outside the grid and any
+loading/inert container; localize the wording and avoid duplicating announcements from an existing
+notification system. For example, inside a component with `rows` and `columns` already defined:
+
+```tsx
+const [saveError, setSaveError] = useState("");
+
+return (
+  <>
+    <DataGrid
+      rows={rows}
+      columns={columns}
+      getRowId={(row) => row.id}
+      onCellCommit={async (update) => {
+        setSaveError("");
+        await saveCell(update); // Update authoritative rows before resolving.
+      }}
+      onCellCommitError={({ update }) => {
+        setSaveError(
+          `Could not save ${update.columnId} in row ${update.rowId}. Please retry.`
+        );
+      }}
+    />
+    <p role="alert" aria-atomic="true">
+      {saveError}
+    </p>
+  </>
+);
+```
+
+Supply `saveCell` using your persistence code. This example does not change rollback behavior:
+applications must undo their own optimistic row updates. Test the announcement with actual assistive
+technology, including repeated failures and failures received while loading.
+
 ## Custom editor focus, keyboard and popups
 
 The grid retains a themeable frame positioned in a body portal. See [styling](./STYLING.md#editor-themes)
@@ -259,3 +296,19 @@ custom/native controls, controlled/read-only selection, offscreen and frozen foc
 nested status popup. Unit integration tests exercise popup selection without an accidental commit.
 React 18, Next.js, other browser engines, physical mobile devices and assistive technology remain
 unverified; this source example is not package compatibility evidence.
+
+## Accessibility and input integration
+
+See [Accessibility and interaction](./ACCESSIBILITY.md) for the keyboard/touch contract and release
+verification matrix. The grid container and rendered controls use browser tab order; there is no
+F6 interaction mode or automatic tabindex rewriting. Custom controls must forward names/state,
+provide usable targets, native activation, focusability and visible focus. Only mounted controls
+participate, following the frozen-zone DOM order rather than necessarily visual row order.
+Default checkbox labels cover their gutter cell; custom controls own their hit area. Physical touch
+and AT verification of default/custom mixed and read-only states is still required.
+
+Custom editors must name inputs, associate validation messages, handle IME composition, provide
+explicit touch save/cancel and restore focus through the supplied callbacks. Keep popup DOM within
+the host and fit it to the visible viewport. The built-in editor's new host-boundary blur and touch
+actions do not impose those behaviors on custom editors. Applications own async save-error feedback
+through `onCellCommitError`, including any screen-reader announcement.

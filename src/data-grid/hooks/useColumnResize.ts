@@ -117,17 +117,6 @@ export function useColumnResize<T>(args: {
     return true;
   };
 
-  // A normal pointerup clears sourceRef before capture is released. If capture disappears first,
-  // preserve the last width the guide showed rather than silently discarding the resize.
-  const onLostPointerCapture = () => {
-    if (scrollRef.current) scrollRef.current.style.cursor = "";
-    const src = sourceRef.current;
-    if (!src) return;
-    sourceRef.current = null;
-    resizeStore.end();
-    if (src.width !== src.startWidth) onCommit(src.columnId, src.width);
-  };
-
   const cancel = () => {
     sourceRef.current = null;
     resizeStore.end();
@@ -138,7 +127,7 @@ export function useColumnResize<T>(args: {
     onPointerDown,
     onPointerMove,
     onPointerUp,
-    onLostPointerCapture,
+    onLostPointerCapture: cancel,
     cancel,
     isActive: () => Boolean(sourceRef.current),
   };

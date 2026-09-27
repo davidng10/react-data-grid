@@ -19,13 +19,13 @@ export interface DefaultEditorApi {
 
 /** Auto-growing text editor with spreadsheet-style Enter, Tab, and Escape behavior. */
 export function FloatingTextEditor(props: {
+  label: string;
   api: DefaultEditorApi;
   width: number;
   rowHeight: number;
   onEnter: () => void;
-  onTab: () => void;
+  onTab: (backward: boolean) => void;
   onEscape: () => void;
-  onBlur: () => void;
 }) {
   const { api, width, rowHeight } = props;
   const ref = useRef<HTMLTextAreaElement | null>(null);
@@ -57,12 +57,13 @@ export function FloatingTextEditor(props: {
   }, [value, rowHeight, width]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       props.onEnter();
     } else if (e.key === "Tab") {
       e.preventDefault();
-      props.onTab();
+      props.onTab(e.shiftKey);
     } else if (e.key === "Escape") {
       e.preventDefault();
       props.onEscape();
@@ -78,6 +79,7 @@ export function FloatingTextEditor(props: {
     <>
       <textarea
         className="dgr-editor-input"
+        aria-label={props.label}
         ref={ref}
         value={value}
         rows={1}
@@ -86,7 +88,6 @@ export function FloatingTextEditor(props: {
         aria-describedby={hasError ? errorId : undefined}
         onChange={(e) => api.setDraft(e.target.value)}
         onKeyDown={onKeyDown}
-        onBlur={() => props.onBlur()}
         style={{
           minWidth: width,
           maxWidth,
@@ -111,36 +112,49 @@ export function FloatingTextEditor(props: {
  * expand). Picking an option commits immediately; Escape cancels.
  */
 export function NativeSelectEditor(props: {
+  label: string;
   api: DefaultEditorApi;
   width: number;
   options: SelectOption[];
   onEscape: () => void;
 }) {
   const { api, width, options } = props;
+  const errorId = useId();
   const value = api.draft == null ? "" : String(api.draft);
   // Borderless/transparent — fills the grid-owned host panel.
   return (
-    <select
-      className="dgr-editor-input"
-      autoFocus
-      value={value}
-      onChange={(e) => {
-        api.setDraft(e.target.value);
-        api.commit();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          props.onEscape();
-        }
-      }}
-      style={{ minWidth: width }}
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+    <>
+      <select
+        className="dgr-editor-input"
+        aria-label={props.label}
+        aria-invalid={api.status === "error" || undefined}
+        aria-describedby={api.status === "error" ? errorId : undefined}
+        autoFocus
+        value={value}
+        onChange={(e) => {
+          api.setDraft(e.target.value);
+          api.commit();
+        }}
+        onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+          if (e.key === "Escape") {
+            e.preventDefault();
+            props.onEscape();
+          }
+        }}
+        style={{ minWidth: width }}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      {api.status === "error" && (
+        <div role="alert" className="dgr-editor-error" id={errorId}>
+          {String(api.error)}
+        </div>
+      )}
+    </>
   );
 }
