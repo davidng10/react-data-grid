@@ -7,6 +7,8 @@ import type { ReactNode } from "react";
 import type { FrozenZone } from "../core/types";
 
 export const HeaderCell = memo(function HeaderCell(props: {
+  id: string;
+  columnIndex: number;
   className?: string;
   content: ReactNode;
   x: number;
@@ -32,6 +34,9 @@ export const HeaderCell = memo(function HeaderCell(props: {
   } = props;
   return (
     <div
+      id={props.id}
+      role="columnheader"
+      aria-colindex={props.columnIndex}
       className={classNames("dgr-header-cell", props.className)}
       data-frozen={frozen}
       style={{

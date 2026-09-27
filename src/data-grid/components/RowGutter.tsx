@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
+import { gridCellId } from "../internal/accessibility";
 import { GUTTER_WIDTH } from "../internal/constants";
 
 import type { VirtualItem } from "@tanstack/react-virtual";
@@ -14,6 +15,7 @@ import type {
 // selected-row set (a click re-renders only this leaf, never the body). Re-renders on scroll too
 // (its windowed rows change), but that's ~30 checkboxes — negligible next to the body.
 export function RowGutter(props: {
+  gridId: string;
   store: GridStore;
   vRows: VirtualItem[];
   rowIdAt: (index: number) => RowId;
@@ -82,7 +84,13 @@ export function RowGutter(props: {
       data-divider={strongDivider || undefined}
       style={{ flex: `0 0 ${GUTTER_WIDTH}px` }}
     >
-      <div className="dgr-gutter-header" style={{ height: rowHeight }}>
+      <div
+        className="dgr-gutter-header"
+        role="columnheader"
+        aria-colindex={1}
+        id={gridCellId(props.gridId, null, null)}
+        style={{ height: rowHeight }}
+      >
         <SelectionCheckbox
           render={renderSelectionCheckbox}
           controlProps={{
@@ -102,6 +110,10 @@ export function RowGutter(props: {
           return (
             <div
               className="dgr-gutter-cell"
+              role="gridcell"
+              aria-colindex={1}
+              aria-rowindex={vr.index + 2}
+              id={gridCellId(props.gridId, rowId, null)}
               key={vr.key}
               style={{
                 width: GUTTER_WIDTH,
@@ -133,18 +145,20 @@ export function RowGutter(props: {
 
 function defaultCheckbox(props: SelectionCheckboxProps) {
   return (
-    <input
-      className="dgr-checkbox"
-      type="checkbox"
-      aria-label={props["aria-label"]}
-      aria-readonly={props.readOnly}
-      disabled={props.disabled}
-      checked={props.checked}
-      ref={(element) => {
-        if (element) element.indeterminate = props.indeterminate;
-      }}
-      onChange={props.onChange}
-    />
+    <label className="dgr-checkbox-target">
+      <input
+        className="dgr-checkbox"
+        type="checkbox"
+        aria-label={props["aria-label"]}
+        aria-readonly={props.readOnly}
+        disabled={props.disabled}
+        checked={props.checked}
+        ref={(element) => {
+          if (element) element.indeterminate = props.indeterminate;
+        }}
+        onChange={props.onChange}
+      />
+    </label>
   );
 }
 

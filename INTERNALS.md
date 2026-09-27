@@ -48,8 +48,8 @@ fake rows. `DataGrid` records whether supplied rows are available, then normaliz
 a shared empty array; internal hooks and row renderers retain their array/nonnullable-row contracts.
 
 Loading uses inert content plus capture guards, including React events bubbling from the body
-editor portal. A layout effect cancels gestures and releases pointer capture. Resize has a separate
-cancel operation because its normal lost-capture behavior commits the last visible guide width.
+editor portal. A layout effect cancels gestures and releases pointer capture. Resize cancellation and lost capture
+both discard the guide; only a clean pointer-up commits.
 Keep network loading independent of `EmptyRowsLayer` behind virtualized cells.
 
 ## Coordinate spaces
@@ -179,3 +179,23 @@ resolve through a layout-effect-updated dispatcher and the latest store snapshot
 checks loading/read-only and current IDs; the gutter contains keyboard and pointer-down events so
 checkbox activation does not start cell navigation or editing. Selection semantics remain grid-owned.
 Public consumer responsibilities are in [docs/INTEGRATION.md](./docs/INTEGRATION.md).
+
+## Accessibility and input ownership
+
+`GridAccessibility` supplies logical ARIA row owners referencing the real mounted cells across
+zones. It updates active-descendant/selection attributes directly from the store, writing changed
+cell selection attributes without rerendering cells. IDs are instance-scoped and retain stable row
+identity. Controls retain native tabindex; there is no control-mode observer, tab-stop cache or F6
+handler. The semantic nodes have no layout dimensions and never duplicate content. Actual AT
+ownership support remains a release gate.
+
+Async save-error feedback belongs to the application through `onCellCommitError`; the grid has no
+commit-announcement subscription or live region. Default editor validation still exposes its own
+associated error. Pending visual content is aria-hidden so it cannot duplicate semantic cells.
+
+The outer frame contains the scroller and its sibling status layer; no toolbar layout wrapper is needed.
+Pointer movement, selection and resize/reorder guides stay in stores. Normal touch only records a
+tap candidate and preserves native scrolling. The shell owns the pointer ID, cancels on additional
+contacts and invalidates gestures when source identity/geometry changes. No built-in actions panel
+is rendered. Deliberate touch ranges, touch edit entry and keyboard/touch column actions require
+replacement interactions; touch header dragging is currently absent.

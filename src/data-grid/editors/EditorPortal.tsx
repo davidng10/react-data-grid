@@ -178,7 +178,22 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
             )
           : rect.x;
       host.style.visibility = "visible";
-      host.style.transform = `translate(${origin.left + x}px, ${origin.top + y}px)`;
+      const viewport = window.visualViewport;
+      const left = viewport?.offsetLeft ?? 0;
+      const top = viewport?.offsetTop ?? 0;
+      const availableWidth = viewport?.width ?? window.innerWidth;
+      const availableHeight = viewport?.height ?? window.innerHeight;
+      host.style.maxWidth = `${availableWidth}px`;
+      host.style.maxHeight = `${availableHeight}px`;
+      const hostWidth = Math.min(
+        host.getBoundingClientRect().width || rect.width,
+        availableWidth
+      );
+      const hostHeight = Math.min(
+        host.getBoundingClientRect().height || rect.height,
+        availableHeight
+      );
+      host.style.transform = `translate(${clamp(origin.left + x, left, left + availableWidth - hostWidth)}px, ${clamp(origin.top + y, top, top + availableHeight - hostHeight)}px)`;
     };
 
     place();
@@ -192,10 +207,20 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
     };
     scroller.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
+    window.addEventListener("scroll", onScroll, true);
+    window.visualViewport?.addEventListener("resize", onScroll);
+    window.visualViewport?.addEventListener("scroll", onScroll);
+    const observer = new ResizeObserver(onScroll);
+    if (hostRef.current) observer.observe(hostRef.current);
+    observer.observe(scroller);
     return () => {
       if (raf) cancelAnimationFrame(raf);
       scroller.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
+      window.removeEventListener("scroll", onScroll, true);
+      window.visualViewport?.removeEventListener("resize", onScroll);
+      window.visualViewport?.removeEventListener("scroll", onScroll);
+      observer.disconnect();
     };
   }, [
     loading,
@@ -270,6 +295,7 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
   } else if (column.type === "select") {
     content = (
       <NativeSelectEditor
+        label={`${column.name}, row ${cell.rowIndex + 1}`}
         api={ctx}
         width={width}
         options={column.options ?? []}
@@ -279,13 +305,13 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
   } else {
     content = (
       <FloatingTextEditor
+        label={`${column.name}, row ${cell.rowIndex + 1}`}
         api={ctx}
         width={width}
         rowHeight={rowHeight}
         onEnter={() => commitAndMove("down")}
-        onTab={() => commitAndMove("right")}
+        onTab={(backward) => commitAndMove(backward ? "left" : "right")}
         onEscape={cancel}
-        onBlur={commitImplicit}
       />
     );
   }
@@ -294,16 +320,39 @@ export function EditorPortal<T>(props: EditorPortalProps<T>) {
     <div
       className="dgr-editor-host"
       ref={attachHost}
+      onBlur={(event) => {
+        if (column.renderEditor || loading) return;
+        if (
+          event.relatedTarget instanceof Node &&
+          event.currentTarget.contains(event.relatedTarget)
+        )
+          return;
+        commitImplicit();
+      }}
       onFocusCapture={(event) => {
         restoreFocusRef.current = event.target as HTMLElement;
       }}
       style={{ display: loading ? "none" : undefined }}
       inert={loading || undefined}
       aria-hidden={loading || undefined}
+      data-default-editor={!column.renderEditor || undefined}
       data-editing=""
       data-invalid={hasError ? "" : undefined}
     >
       {content}
+      {!column.renderEditor && (
+        <div
+          className="dgr-editor-actions"
+          onPointerDown={(event) => event.preventDefault()}
+        >
+          <button type="button" onClick={commit}>
+            Save edit
+          </button>
+          <button type="button" onClick={cancel}>
+            Cancel edit
+          </button>
+        </div>
+      )}
     </div>,
     document.body
   );

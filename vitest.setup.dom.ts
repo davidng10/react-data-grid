@@ -35,9 +35,13 @@ if (!("requestAnimationFrame" in globalThis)) {
 if (!("PointerEvent" in globalThis)) {
   class PointerEventPolyfill extends MouseEvent {
     pointerId: number;
+    pointerType: string;
+    isPrimary: boolean;
     constructor(type: string, params: PointerEventInit = {}) {
       super(type, params);
       this.pointerId = params.pointerId ?? 0;
+      this.pointerType = params.pointerType ?? "mouse";
+      this.isPrimary = params.isPrimary ?? true;
     }
   }
   (globalThis as Globalish).PointerEvent = PointerEventPolyfill;

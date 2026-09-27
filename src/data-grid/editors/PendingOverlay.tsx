@@ -118,7 +118,7 @@ export const PendingOverlay = memo(function PendingOverlay(props: {
   if (items.length === 0) return null;
 
   return (
-    <div className="dgr-overlay">
+    <div className="dgr-overlay" aria-hidden="true">
       {items.map((it) =>
         it.status === "error" ? (
           <ErrorFlash key={it.key} rect={it.rect} />

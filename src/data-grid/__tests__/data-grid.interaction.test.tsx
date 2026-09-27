@@ -294,7 +294,7 @@ describe("column resize", () => {
     expect(onColumnWidthsChange).toHaveBeenCalledWith({ c0: 150 });
   });
 
-  it("keeps the last visible width when pointer capture is lost before release", () => {
+  it("discards the guide when pointer capture is lost before release", () => {
     const onColumnWidthsChange = vi.fn();
     const { scroller } = renderGrid({ onColumnWidthsChange });
 
@@ -303,11 +303,10 @@ describe("column resize", () => {
     fireEvent.lostPointerCapture(scroller);
 
     expect(scroller.style.cursor).toBe("");
-    expect(onColumnWidthsChange).toHaveBeenCalledTimes(1);
-    expect(onColumnWidthsChange).toHaveBeenCalledWith({ c0: 150 });
+    expect(onColumnWidthsChange).not.toHaveBeenCalled();
 
     up(scroller, 150, 16); // late release must not commit a second time
-    expect(onColumnWidthsChange).toHaveBeenCalledTimes(1);
+    expect(onColumnWidthsChange).not.toHaveBeenCalled();
   });
 
   it("clamps the committed width to the column maxWidth", () => {
