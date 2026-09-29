@@ -11,6 +11,11 @@ remain inherited. `id`, `className`, and `style` belong to the stationary `.dgr-
 `[data-grid-scroller]` is the inner scrolling/focus element. The grid fills its parent; give
 that parent a definite height.
 
+Set `style={{ borderRadius: 8 }}` on `DataGrid` to round its outer frame. The default
+is 4px; `--dgr-border-radius: 8px` provides the same control through a
+theme. The inner scroller clips its content to the rounded corners; the outer frame
+does not clip overflow. Body-mounted editors remain outside the scroller.
+
 ```css
 .accounts {
   --dgr-background: #111827;
@@ -35,6 +40,7 @@ columns. Tokens do not calculate contrast automatically.
 | Token                              | Default                                                      | Purpose                                                         |
 | ---------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------- |
 | `--dgr-background`                 | `#fff`                                                       | Frame, body, cells, pending values                              |
+| `--dgr-border-radius`              | `4px`                                                        | Outer frame corner radius                                      |
 | `--dgr-text-color`                 | `#1c1917`                                                    | Text; draft notice fallback is `#44403c`                        |
 | `--dgr-font-family`                | `system-ui, sans-serif`                                      | Grid and editor typography                                      |
 | `--dgr-font-size`                  | `13px`                                                       | Grid and editor type size                                       |

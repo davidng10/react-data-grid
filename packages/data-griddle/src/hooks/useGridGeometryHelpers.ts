@@ -9,7 +9,11 @@ import type { ZoneLayout } from "../internal/layout";
 import type { GridLayout } from "./useGridLayout";
 
 export interface GridGeometryHelpers<T> {
-  hitTest: (clientX: number, clientY: number) => CellCoord | null;
+  hitTest: (
+    clientX: number,
+    clientY: number,
+    clampToEdges?: boolean
+  ) => CellCoord | null;
   headerHitTest: (
     clientX: number,
     clientY: number
@@ -95,23 +99,35 @@ export function useGridGeometryHelpers<T>(args: {
   };
 
   // Map a viewport point to a cell. Zone is chosen by `resolveZone`'s screen banding; the header strip
-  // and the gutter return null (not selectable). Row/column clamp to the grid edges so a drag past the
-  // edge still resolves to the last cell.
-  const hitTest = (clientX: number, clientY: number): CellCoord | null => {
+  // and the gutter return null (not selectable). Only active drags clamp to the grid edges;
+  // clicks in empty space must not resolve to the last cell.
+  const hitTest = (
+    clientX: number,
+    clientY: number,
+    clampToEdges = false
+  ): CellCoord | null => {
     const el = scrollRef.current;
-    if (!el || columnOrder.length === 0) return null;
+    if (!el || columnOrder.length === 0 || rows.length === 0) return null;
     const rect = el.getBoundingClientRect();
 
     const vpY = clientY - rect.top;
+    const vpX = clientX - rect.left;
     if (vpY < rowHeight) return null; // over the sticky header
-    const rowIndex = clampNum(
-      Math.floor((vpY - rowHeight + el.scrollTop) / rowHeight),
-      0,
-      rows.length - 1
-    );
+    const row = Math.floor((vpY - rowHeight + el.scrollTop) / rowHeight);
+    if (
+      !clampToEdges &&
+      (vpX < 0 ||
+        vpX >= el.clientWidth ||
+        vpY >= el.clientHeight ||
+        row < 0 ||
+        row >= rows.length)
+    )
+      return null;
+    const rowIndex = clampNum(row, 0, rows.length - 1);
 
-    const r = resolveZone(clientX - rect.left, el.clientWidth, el.scrollLeft);
+    const r = resolveZone(vpX, el.clientWidth, el.scrollLeft);
     if (!r) return null;
+    if (!clampToEdges && (r.zoneX < 0 || r.zoneX >= r.zl.total)) return null;
     const i = colIndexAtX(r.zl.offsets, r.zoneX);
     if (i < 0) return null;
     const col = r.cols[i];

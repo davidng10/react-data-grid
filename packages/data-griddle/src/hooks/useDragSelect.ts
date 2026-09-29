@@ -78,7 +78,7 @@ export function useDragSelect<T>(args: {
       });
       if (dy) el.scrollTop += dy;
       if (dx) el.scrollLeft += dx;
-      if (dx || dy) extendDrag(hitTest(pt.x, pt.y));
+      if (dx || dy) extendDrag(hitTest(pt.x, pt.y, true));
     }
     autoScrollRef.current = requestAnimationFrame(autoScrollTick);
   };
@@ -135,7 +135,7 @@ export function useDragSelect<T>(args: {
       tapRef.current = null;
     if (!draggingRef.current) return;
     pointerRef.current = { x: e.clientX, y: e.clientY };
-    extendDrag(hitTest(e.clientX, e.clientY));
+    extendDrag(hitTest(e.clientX, e.clientY, true));
   };
 
   // End the drag and its auto-scroll loop. Shared by a clean pointer-up and an interrupted
@@ -166,7 +166,14 @@ export function useDragSelect<T>(args: {
     // A click (no drag) on the already-focused cell enters edit mode.
     const editCell = pendingEditRef.current;
     pendingEditRef.current = null;
-    if (editCell && !movedRef.current) beginEdit(editCell);
+    const releasedCell = hitTest(e.clientX, e.clientY);
+    if (
+      editCell &&
+      !movedRef.current &&
+      releasedCell?.rowIndex === editCell.rowIndex &&
+      releasedCell.columnId === editCell.columnId
+    )
+      beginEdit(editCell);
   };
 
   // Pointer capture was lost WITHOUT a pointer-up — touch `pointercancel`, the captured node

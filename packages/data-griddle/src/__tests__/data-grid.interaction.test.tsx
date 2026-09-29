@@ -516,6 +516,60 @@ describe("column resize", () => {
 });
 
 describe("click-to-edit vs drag-select disambiguation", () => {
+  it.each([
+    [50, 96],
+    [50, 200],
+    [150, 80],
+  ])(
+    "ignores blank-space clicks at (%i, %i) after focusing the last cell",
+    (x, y) => {
+      const onSel = vi.fn();
+      const { scroller } = renderGrid({
+        rows: ROWS.slice(0, 2),
+        columns: editableCols().slice(0, 1),
+        onSelectionChange: onSel,
+      });
+      click(scroller, 50, 80);
+      onSel.mockClear();
+
+      click(scroller, x, y);
+
+      expect(screen.queryByRole("textbox")).toBeNull();
+      expect(onSel).not.toHaveBeenCalled();
+    }
+  );
+
+  it("still extends a drag through blank space to the last row", () => {
+    const onSel = vi.fn();
+    const { scroller } = renderGrid({
+      rows: ROWS.slice(0, 2),
+      columns: editableCols().slice(0, 1),
+      onSelectionChange: onSel,
+    });
+    down(scroller, 50, 48);
+    move(scroller, 50, 200);
+    up(scroller, 50, 200);
+
+    expect(lastSelection(onSel).range).toEqual({
+      anchor: { rowIndex: 0, columnId: "c0" },
+      focus: { rowIndex: 1, columnId: "c0" },
+    });
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("does not edit when a press on the last cell is released below the rows", () => {
+    const { scroller } = renderGrid({
+      rows: ROWS.slice(0, 2),
+      columns: editableCols().slice(0, 1),
+    });
+    click(scroller, 50, 80);
+    down(scroller, 50, 80);
+    move(scroller, 50, 200);
+    up(scroller, 50, 200);
+
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
   const editableCols = (): Column<Row>[] => [
     { id: "c0", name: "C0", width: 100, accessor: (r) => r.v, editable: true },
     { id: "c1", name: "C1", width: 100, accessor: (r) => r.v },

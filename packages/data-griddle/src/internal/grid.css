@@ -145,6 +145,10 @@ textarea.dgr-editor-input {
 }
 
 /* Low specificity visual defaults. */
+:where(.dgr-root) {
+  border: 1px solid var(--dgr-header-border-color, #e7e5e4);
+  border-radius: var(--dgr-border-radius, 4px);
+}
 :where(.dgr-root, .dgr-editor-host) {
   color: var(--dgr-text-color, #1c1917);
   font-family: var(--dgr-font-family, system-ui, sans-serif);
@@ -156,28 +160,38 @@ textarea.dgr-editor-input {
 :where(.dgr-cell, .dgr-header-cell, .dgr-pending-cell) {
   padding: 0 var(--dgr-cell-padding-inline, 10px);
   background: var(--dgr-background, #fff);
-  border-right: 1px solid var(--dgr-cell-border-color, #f0efee);
-  border-bottom: 1px solid var(--dgr-cell-border-color, #f0efee);
+}
+:where(.dgr-cell, .dgr-header-cell) {
+  border-left: 1px solid var(--dgr-cell-border-color, #f0efee);
+}
+:where(.dgr-pending-cell) {
+  /* Cover the value while leaving the underlying cell's dividers visible. */
+  border: 1px solid transparent;
+  background-clip: padding-box;
 }
 :where(.dgr-header-cell, .dgr-header-row, .dgr-gutter-header) {
   background: var(--dgr-header-background, #f5f5f4);
 }
 :where(.dgr-header-cell) {
   font-weight: var(--dgr-header-font-weight, 600);
-  border-right-color: var(--dgr-header-border-color, #e7e5e4);
+  border-left-color: var(--dgr-header-border-color, #e7e5e4);
 }
-:where(.dgr-header-row, .dgr-gutter-header) {
+:where(.dgr-header-cell, .dgr-header-row, .dgr-gutter-header) {
   border-bottom: 1px solid var(--dgr-frozen-divider-color, #d6d3d1);
 }
-:where(.dgr-gutter-cell, .dgr-gutter-header) {
-  border-right: 1px solid var(--dgr-header-border-color, #e7e5e4);
+/* Dividers belong to the following cell; the frame owns the outer edges. */
+:where(.dgr-cell, .dgr-gutter-cell) {
+  border-top: 1px solid var(--dgr-cell-border-color, #f0efee);
 }
-:where(.dgr-gutter-cell) {
-  border-bottom: 1px solid var(--dgr-cell-border-color, #f0efee);
+:where(.dgr-cell[aria-colindex="1"], .dgr-header-cell[aria-colindex="1"]) {
+  border-left: 0;
+}
+:where(.dgr-cell[aria-rowindex="2"], .dgr-gutter-cell[aria-rowindex="2"]) {
+  border-top: 0;
 }
 .dgr-checkbox {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   margin: 0;
   accent-color: var(--dgr-focus-color, #2563eb);
 }
@@ -186,7 +200,9 @@ textarea.dgr-editor-input {
   border: 1px solid var(--dgr-selection-border-color, #2563eb);
 }
 :where(.dgr-focus-ring) {
-  border: 1px solid var(--dgr-focus-color, #2563eb);
+  /* Leave one pixel for frozen dividers that extend into the adjacent cell. */
+  outline: 1px solid var(--dgr-focus-color, #2563eb);
+  outline-offset: -2px;
 }
 :where(.dgr-resize-indicator) {
   background: var(--dgr-resize-indicator-color, #2563eb);
@@ -308,9 +324,12 @@ select.dgr-editor-input {
   font: inherit;
 }
 @media (forced-colors: active) {
-  .dgr-focus-ring,
   .dgr-selection-range {
     border: 2px solid Highlight;
+  }
+  .dgr-focus-ring {
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
   }
   .dgr-scroller:focus-visible:not([data-has-focused-cell]) {
     outline-color: Highlight;
