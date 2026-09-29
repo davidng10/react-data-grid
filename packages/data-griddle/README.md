@@ -1,9 +1,5 @@
 # Data Griddle - A performant React Data Grid
 
-The local app currently shows only one editable grid on a blank page. The documentation
-website and its example routes were removed at the maintainer’s request; repository guides
-remain available under `docs/`.
-
 A virtualized, DOM-based data grid for React. The component supports large datasets while keeping
 selection, editing, and pointer interactions off the main cell-rendering path.
 
@@ -215,7 +211,7 @@ pnpm exec playwright install chromium
 pnpm check:consumers  # real tarballs in isolated Vite/Next consumers
 ```
 
-See [INTERNALS.md](./INTERNALS.md) for the rendering model and performance constraints.
+See [INTERNALS.md](https://github.com/davidng10/react-data-grid/blob/main/INTERNALS.md) for the rendering model and performance constraints.
 
 ## Styling and themes
 
@@ -224,21 +220,21 @@ Default styles are scoped to grid-owned classes; import `data-griddle/styles.css
 grid's theme. Columns accept `cellClassName` and `headerClassName` as strings or context callbacks.
 Use `rowHeight` and column widths for geometry; CSS controls appearance.
 
-See the [styling contract](./docs/STYLING.md) for tokens, defaults, parts, callback contexts, and
+See the [styling contract](https://github.com/davidng10/react-data-grid/blob/main/docs/STYLING.md) for tokens, defaults, parts, callback contexts, and
 portal synchronization limits. `/styling` demonstrates two independent themes without a global application reset.
 
 ## Integration APIs
 
-See the [integration guide](./docs/INTEGRATION.md) for controlled/uncontrolled/read-only state,
+See the [integration guide](https://github.com/davidng10/react-data-grid/blob/main/docs/INTEGRATION.md) for controlled/uncontrolled/read-only state,
 stable identity, editing and persistence, custom selection controls, and the `DataGridHandle.focusCell`
 command. Run `pnpm dev` and open `/integration` for focused examples using only the public entry.
 
-Stores and geometry helpers remain private. See [package verification](./docs/PACKAGE_VERIFICATION.md)
+Stores and geometry helpers remain private. See [package verification](https://github.com/davidng10/react-data-grid/blob/main/docs/PACKAGE_VERIFICATION.md)
 for exact tested versions and remaining limitations.
 
 ## Accessibility and interaction
 
-See [keyboard, touch and accessibility guidance](./docs/ACCESSIBILITY.md) for navigation, native control
+See [keyboard, touch and accessibility guidance](https://github.com/davidng10/react-data-grid/blob/main/docs/ACCESSIBILITY.md) for navigation, native control
 tab order, editor behavior, remaining touch/column interaction gaps and the manual test matrix.
 Source semantics and keyboard navigation are implemented; target-browser, physical-device and
 screen-reader support remains unverified. The `/integration` example adapts frozen columns to narrow containers.

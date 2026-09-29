@@ -26,3 +26,12 @@ coverage
 
 # Local planning and verification artifacts; keep out of commits.
 /plan/
+
+.next/
+out/
+*.tsbuildinfo
+*.tgz
+playwright-report/
+test-results/
+
+**/next-env.d.ts

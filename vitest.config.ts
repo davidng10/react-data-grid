@@ -11,9 +11,16 @@ export default defineConfig({
     projects: [
       {
         test: {
+          name: "ssr",
+          environment: "node",
+          include: ["packages/data-griddle/src/**/*.ssr.test.tsx"],
+        },
+      },
+      {
+        test: {
           name: "core",
           environment: "node",
-          include: ["src/**/*.test.ts"],
+          include: ["packages/data-griddle/src/**/*.test.ts"],
         },
       },
       {
@@ -22,7 +29,8 @@ export default defineConfig({
           environment: "jsdom",
           // Preserve grid CSS (including ?raw) for computed-style assertions.
           css: { include: [/grid\.css/] },
-          include: ["src/**/*.test.tsx"],
+          include: ["packages/data-griddle/src/**/*.test.tsx"],
+          exclude: ["**/*.ssr.test.tsx"],
           setupFiles: ["./vitest.setup.dom.ts"],
         },
       },
@@ -31,10 +39,10 @@ export default defineConfig({
       provider: "v8",
       // Measure only the shippable grid's runtime logic — not the tests, the type contract
       // (interfaces erase at compile time), the demo harness, or config.
-      include: ["src/data-grid/**"],
+      include: ["packages/data-griddle/src/**"],
       exclude: [
-        "src/data-grid/__tests__/**",
-        "src/data-grid/core/types/**",
+        "packages/data-griddle/src/__tests__/**",
+        "packages/data-griddle/src/core/types/**",
         "**/*.d.ts",
       ],
     },

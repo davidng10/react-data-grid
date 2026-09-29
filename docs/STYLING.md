@@ -1,9 +1,9 @@
 # Styling Data Griddle
 
 The experimental styling interface consists of scoped default CSS, `--dgr-*` variables,
-part/state selectors, and column class callbacks. Importing `DataGrid` from this repository's
-source entry imports both grid and loading CSS. There is no separately published stylesheet
-entry yet; package exports and Next.js stylesheet integration remain release work.
+part/state selectors, and column class callbacks. Import `data-griddle/styles.css` once in your
+application entry. It includes grid and loading styles. In Next.js import it in the root layout
+(App Router) or `pages/_app.tsx` (Pages Router).
 
 Set tokens on the grid's `className`, inline `style` (cast custom properties to `CSSProperties`
 in TypeScript), or an ancestor. Defaults use fallbacks at their use sites, so ancestor tokens
@@ -158,12 +158,10 @@ host to avoid outside-click commits. A custom control can use inherited tokens a
 
 Run `pnpm dev` and visit `/styling` for independent day/night grids, conditional frozen and center
 cells, density/type controls, initial/refresh/empty states, delayed or failed saves, a custom Status
-editor, and timed theme/override changes during editing. `/styling-check.html` imports no playground
-reset and includes ordinary controls outside the grid. This is a source-development fixture, not
-proof of npm packaging.
+editor, and timed theme/override changes during editing. The docs apply no global reset to grid descendants. Separate packed consumers verify library
+styles without docs styles; see [package verification](./PACKAGE_VERIFICATION.md).
 
-React 18, Next.js, package delivery, accessibility, and physical mobile support remain unverified
-release targets.
+Accessibility, physical mobile and the full browser matrix remain release verification gaps.
 
 Selection controls can also be replaced through `renderSelectionCheckbox`; see the
 [integration guide](./INTEGRATION.md#replaceable-selection-checkboxes). `.dgr-checkbox` styles the

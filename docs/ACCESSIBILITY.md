@@ -97,7 +97,7 @@ Touch entry into editing, deliberate touch range selection, and touch column res
 need replacement interactions. These remain required preview features, not completed verification
 items. Normal touch header dragging does not resize/reorder, and normal swipes never select a range.
 
-Default checkboxes are 24px controls inside labels covering their gutter cell (40px wide); choose
+Default checkboxes are 16px controls inside labels covering their gutter cell (40px wide); choose
 `rowHeight` 44 or larger for taller row targets. Replacement controls must provide usable targets.
 
 Keep frozen widths plus gutter below container width, leaving useful center space. The grid never
