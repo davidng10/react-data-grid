@@ -1,26 +1,24 @@
 {
-  "name": "data-griddle",
+  "name": "data-griddle-workspace",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "pnpm build:lib && concurrently -k \"pnpm --filter data-griddle dev\" \"pnpm --filter @data-griddle/docs dev\"",
+    "build:lib": "pnpm --filter data-griddle build",
+    "build": "pnpm build:lib && pnpm --filter @data-griddle/docs build",
     "lint:eslint": "eslint .",
-    "lint:tsc": "tsc -b",
+    "lint:tsc": "pnpm --filter data-griddle lint && pnpm --filter @data-griddle/docs typecheck && pnpm lint:fixtures",
     "lint": "pnpm lint:eslint && pnpm lint:tsc",
-    "preview": "vite preview",
-    "format": "prettier . --write",
-    "format:check": "prettier . --check",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "prepare": "husky"
-  },
-  "dependencies": {
-    "@tanstack/react-virtual": "^3.14.2",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "react-router": "^7.17.0"
+    "check:package": "pnpm build:lib && node scripts/check-package.mjs",
+    "check:consumers": "pnpm check:package && node scripts/check-consumers.mjs",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "prepare": "husky",
+    "check:docs": "pnpm build && node scripts/check-docs.mjs",
+    "lint:fixtures": "tsc -p fixtures/tsconfig.json && tsc -p fixtures/vite/tsconfig.json && tsc -p fixtures/next-app/tsconfig.json && tsc -p fixtures/next-pages/tsconfig.json"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -31,14 +29,11 @@
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
     "@vitest/coverage-v8": "^4.1.8",
-    "antd": "^6.4.3",
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.6",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
@@ -47,12 +42,20 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "esbuild": "0.28.2",
+    "@playwright/test": "1.63.0",
+    "concurrently": "9.2.1",
+    "data-griddle": "workspace:*",
+    "next": "16.3.6"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
       "eslint --fix",
       "prettier --write"
     ]
-  }
+  },
+  "packageManager": "pnpm@10.33.0"
 }

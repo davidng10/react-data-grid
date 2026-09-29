@@ -1,22 +1,23 @@
 # Data grid internals
 
-This guide covers the constraints that are easy to miss when changing `src/data-grid`. Public usage
+This guide covers the constraints that are easy to miss when changing `packages/data-griddle/src`. Public usage
 belongs in `README.md`; implementation history does not belong in either document.
 
 ## Structure
 
 ```text
-src/data-grid/data-grid.tsx              React shell and interaction composition
-src/data-grid/components/                headers, cells, zones, and overlays
-src/data-grid/hooks/                     layout, editing, keyboard, and pointer gestures
-src/data-grid/core/store/                plain TypeScript observable stores
-src/data-grid/core/selection/geometry.ts pure navigation and overlay geometry
-src/data-grid/core/types/                public data and column contracts
-src/data-grid/editors/                   portal host and built-in editors
-src/data-grid/internal/                  shared layout, styling, and utility code
+packages/data-griddle/src/data-grid.tsx              React shell and interaction composition
+packages/data-griddle/src/components/                headers, cells, zones, and overlays
+packages/data-griddle/src/hooks/                     layout, editing, keyboard, and pointer gestures
+packages/data-griddle/src/core/store/                plain TypeScript observable stores
+packages/data-griddle/src/core/selection/geometry.ts pure navigation and overlay geometry
+packages/data-griddle/src/core/types/                public data and column contracts
+packages/data-griddle/src/editors/                   portal host and built-in editors
+packages/data-griddle/src/internal/                  shared layout, styling, and utility code
 ```
 
-`src/playground` is a demo harness and is not part of the component.
+`apps/docs/examples` contains interactive public-API examples. `fixtures` contains isolated
+packed consumers. Neither is part of the published component.
 
 ## Rendering model
 

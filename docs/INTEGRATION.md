@@ -1,7 +1,7 @@
 # Integrating Data Griddle
 
-Import components and types from `src/data-grid/index.ts` in this source playground. npm is the
-first-release distribution target; package delivery is not yet available. Stores, geometry helpers,
+Import components and types from `data-griddle` and styles from `data-griddle/styles.css`.
+The local tarball is available for verification; publication remains disabled. Stores, geometry helpers,
 and deep internal imports are not supported public APIs. The preview API may change.
 
 ## State ownership and defaults
@@ -69,7 +69,7 @@ control. Omitting it retains a native checkbox. The renderer runs in the selecti
 selection changes off the cell rendering path. Renderers must be pure; invoke callbacks from events.
 
 ```tsx
-import type { SelectionCheckboxProps } from "./data-grid";
+import type { SelectionCheckboxProps } from "data-griddle";
 
 function SelectionControl(props: SelectionCheckboxProps) {
   return (
@@ -129,10 +129,9 @@ with their own nested elements. Accessibility-tree state checks are not screen-r
 
 ```tsx
 import { useRef } from "react";
+import { DataGrid } from "data-griddle";
 
-import { DataGrid } from "./data-grid";
-
-import type { Column, DataGridHandle } from "./data-grid";
+import type { Column, DataGridHandle } from "data-griddle";
 
 type Person = { id: string; name: string };
 function People({
@@ -168,7 +167,7 @@ function People({
 
 `DataGrid` preserves
 row inference with object or callback refs. `forwardRef` and `useImperativeHandle` target React 18/19;
-React 18 runtime compatibility still requires verification. Read `ref.current` at command time;
+see [package verification](./PACKAGE_VERIFICATION.md) for tested versions. Read `ref.current` at command time;
 handles may be replaced after a render. An unmounted grid has a null ref.
 
 `focusCell` returns the exported `FocusCellResult`. Validation uses the current supplied rows through
@@ -291,11 +290,11 @@ frame's theme. It must:
 - Use context callbacks rather than internal stores. They respect loading and current row identity.
   Keep the draft in `ctx.draft` so a suspended editor or missing target does not lose it.
 
-Run `pnpm dev` and open `/integration` for the [runnable example](../src/playground/pages/IntegrationPlayground.tsx):
+Run `pnpm dev` and open `/integration` for the [runnable example](../apps/docs/examples/IntegrationExample.tsx):
 custom/native controls, controlled/read-only selection, offscreen and frozen focus, row reversal and a
 nested status popup. Unit integration tests exercise popup selection without an accidental commit.
-React 18, Next.js, other browser engines, physical mobile devices and assistive technology remain
-unverified; this source example is not package compatibility evidence.
+Other browser engines, physical mobile devices and assistive technology remain unverified.
+Packed React/Next checks are recorded separately in [package verification](./PACKAGE_VERIFICATION.md).
 
 ## Accessibility and input integration
 
@@ -312,3 +311,53 @@ explicit touch save/cancel and restore focus through the supplied callbacks. Kee
 the host and fit it to the visible viewport. The built-in editor's new host-boundary blur and touch
 actions do not impose those behaviors on custom editors. Applications own async save-error feedback
 through `onCellCommitError`, including any screen-reader announcement.
+
+## Next.js client boundary and stylesheet
+
+Keep SSR enabled. Import the stylesheet in `app/layout.tsx` or `pages/_app.tsx`:
+
+```tsx
+import "data-griddle/styles.css";
+```
+
+Place interactive configuration inside a Client Component, including accessors, renderers,
+identity functions and event callbacks. A Server Component may supply serializable row data:
+
+```tsx
+"use client";
+
+import { useState } from "react";
+import { DataGrid } from "data-griddle";
+
+import type { Column } from "data-griddle";
+
+type Person = { id: number; name: string };
+export function People({ initialRows }: { initialRows: Person[] }) {
+  const [rows, setRows] = useState(initialRows);
+  const columns: Column<Person>[] = [
+    { id: "name", name: "Name", accessor: (row) => row.name, editable: true },
+  ];
+  return (
+    <div style={{ height: 320 }}>
+      <DataGrid
+        rows={rows}
+        columns={columns}
+        getRowId={(row) => row.id}
+        onCellCommit={({ rowId, nextValue }) =>
+          setRows((current) =>
+            current.map((row) =>
+              row.id === rowId ? { ...row, name: String(nextValue) } : row
+            )
+          )
+        }
+      />
+    </div>
+  );
+}
+```
+
+The library entry preserves `"use client"`. That boundary does not disable server rendering;
+the initial output is a named grid shell. Virtualized rows and center headers need layout
+measurement and are not guaranteed in initial HTML. Keep documentation and searchable content
+outside the grid. Do not send ordinary function-valued column definitions from Server Components.
+The same public component and stylesheet work in Pages Router; no `ssr: false` wrapper is needed.

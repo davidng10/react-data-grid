@@ -1,0 +1,53 @@
+{
+  "name": "data-griddle",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A virtualized React data grid with editing, frozen columns and customizable styles.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/davidng10/react-data-grid.git",
+    "directory": "packages/data-griddle"
+  },
+  "homepage": "https://github.com/davidng10/react-data-grid#readme",
+  "bugs": "https://github.com/davidng10/react-data-grid/issues",
+  "keywords": [
+    "react",
+    "data-grid",
+    "virtualization",
+    "typescript"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": {
+      "types": "./dist/styles.css.d.ts",
+      "default": "./dist/styles.css"
+    }
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "node -e \"throw new Error('Publication disabled during preparation')\""
+  },
+  "peerDependencies": {
+    "react": "^18.3.1 || ^19.2.6",
+    "react-dom": "^18.3.1 || ^19.2.6"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "3.14.2"
+  }
+}

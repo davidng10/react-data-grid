@@ -1,0 +1,360 @@
+/* Grid-owned structure. Calculated geometry stays in component styles.
+   The root keeps its mandatory position/isolation/box-sizing overrides inline. */
+.dgr-root {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+.dgr-scroller {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  position: relative;
+  z-index: 0;
+  border-radius: inherit;
+  outline: none;
+  user-select: none;
+}
+.dgr-content {
+  display: flex;
+  position: relative;
+}
+.dgr-zone,
+.dgr-body {
+  position: relative;
+}
+.dgr-zone[data-zone="left"],
+.dgr-zone[data-zone="right"] {
+  position: sticky;
+  z-index: 2;
+}
+.dgr-zone[data-zone="right"] {
+  right: 0;
+}
+.dgr-row-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+}
+.dgr-header-row,
+.dgr-gutter-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  box-sizing: border-box;
+}
+.dgr-cell,
+.dgr-header-cell,
+.dgr-gutter-cell,
+.dgr-selection-range,
+.dgr-focus-ring,
+.dgr-pending-cell,
+.dgr-error-cell {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+}
+.dgr-cell,
+.dgr-header-cell,
+.dgr-pending-value {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dgr-header-cell > [data-resize-handle] {
+  position: absolute;
+  top: 0;
+  cursor: col-resize;
+  z-index: 1;
+}
+.dgr-header-cell > [data-resize-handle="left"] {
+  left: 0;
+}
+.dgr-header-cell > [data-resize-handle="right"] {
+  right: 0;
+}
+.dgr-gutter-header,
+.dgr-gutter-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dgr-overlay,
+.dgr-skeleton {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.dgr-resize-indicator,
+.dgr-reorder-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+}
+.dgr-resize-indicator {
+  z-index: 3;
+  pointer-events: none;
+}
+.dgr-reorder-indicator {
+  z-index: 2;
+}
+.dgr-skeleton-bars {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  mask-origin: border-box, border-box, content-box;
+  mask-mode: alpha;
+  mask-repeat: repeat-y, repeat-y, repeat;
+  mask-position:
+    left top,
+    right top,
+    left top;
+  /* Caps paint over the full box; the middle stays inside the cap padding. */
+  mask-clip: border-box, border-box, content-box;
+}
+.dgr-pending-cell {
+  display: flex;
+  align-items: center;
+}
+.dgr-pending-value {
+  flex: 1;
+}
+.dgr-pending-spinner {
+  flex: none;
+  margin-left: 6px;
+}
+.dgr-editor-host {
+  position: fixed;
+  top: -2px;
+  left: -2px;
+  z-index: 1000;
+  box-sizing: border-box;
+  /* Scroll placement writes transform and visibility imperatively. */
+}
+.dgr-editor-input,
+.dgr-editor-error {
+  box-sizing: border-box;
+}
+textarea.dgr-editor-input {
+  display: block;
+  resize: none;
+  overflow: hidden;
+}
+
+/* Low specificity visual defaults. */
+:where(.dgr-root) {
+  border: 1px solid var(--dgr-header-border-color, #e7e5e4);
+  border-radius: var(--dgr-border-radius, 4px);
+}
+:where(.dgr-root, .dgr-editor-host) {
+  color: var(--dgr-text-color, #1c1917);
+  font-family: var(--dgr-font-family, system-ui, sans-serif);
+  font-size: var(--dgr-font-size, 13px);
+}
+:where(.dgr-root, .dgr-body) {
+  background: var(--dgr-background, #fff);
+}
+:where(.dgr-cell, .dgr-header-cell, .dgr-pending-cell) {
+  padding: 0 var(--dgr-cell-padding-inline, 10px);
+  background: var(--dgr-background, #fff);
+}
+:where(.dgr-cell, .dgr-header-cell) {
+  border-left: 1px solid var(--dgr-cell-border-color, #f0efee);
+}
+:where(.dgr-pending-cell) {
+  /* Cover the value while leaving the underlying cell's dividers visible. */
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+:where(.dgr-header-cell, .dgr-header-row, .dgr-gutter-header) {
+  background: var(--dgr-header-background, #f5f5f4);
+}
+:where(.dgr-header-cell) {
+  font-weight: var(--dgr-header-font-weight, 600);
+  border-left-color: var(--dgr-header-border-color, #e7e5e4);
+}
+:where(.dgr-header-cell, .dgr-header-row, .dgr-gutter-header) {
+  border-bottom: 1px solid var(--dgr-frozen-divider-color, #d6d3d1);
+}
+/* Dividers belong to the following cell; the frame owns the outer edges. */
+:where(.dgr-cell, .dgr-gutter-cell) {
+  border-top: 1px solid var(--dgr-cell-border-color, #f0efee);
+}
+:where(.dgr-cell[aria-colindex="1"], .dgr-header-cell[aria-colindex="1"]) {
+  border-left: 0;
+}
+:where(.dgr-cell[aria-rowindex="2"], .dgr-gutter-cell[aria-rowindex="2"]) {
+  border-top: 0;
+}
+.dgr-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--dgr-focus-color, #2563eb);
+}
+:where(.dgr-selection-range) {
+  background: var(--dgr-selection-background, rgb(37 99 235 / 12%));
+  border: 1px solid var(--dgr-selection-border-color, #2563eb);
+}
+:where(.dgr-focus-ring) {
+  /* Leave one pixel for frozen dividers that extend into the adjacent cell. */
+  outline: 1px solid var(--dgr-focus-color, #2563eb);
+  outline-offset: -2px;
+}
+:where(.dgr-resize-indicator) {
+  background: var(--dgr-resize-indicator-color, #2563eb);
+}
+:where(.dgr-reorder-indicator) {
+  background: var(--dgr-reorder-indicator-color, #2563eb);
+}
+:where(.dgr-skeleton) {
+  background: var(--dgr-skeleton-background, var(--dgr-background, #fff));
+}
+:where(.dgr-skeleton-bars) {
+  background: var(--dgr-skeleton-bar-color, #f5f5f4);
+}
+:where(.dgr-pending-cell) {
+  color: var(--dgr-pending-color, #78716c);
+  line-height: 1;
+}
+:where(.dgr-pending-track) {
+  stroke: var(--dgr-header-border-color, #e7e5e4);
+}
+:where(.dgr-pending-stroke) {
+  stroke: var(--dgr-pending-color, #2563eb);
+}
+:where(.dgr-error-cell) {
+  border: 1px solid var(--dgr-error-color, #dc2626);
+  background: var(--dgr-error-background, rgb(220 38 38 / 10%));
+  border-radius: 1px;
+}
+:where(.dgr-editor-host) {
+  background: var(--dgr-editor-background, var(--dgr-background, #fff));
+  border: 1px solid var(--dgr-focus-color, #2563eb);
+  border-radius: var(--dgr-editor-radius, 4px);
+  box-shadow: var(--dgr-editor-shadow, 0 2px 12px rgb(0 0 0 / 12%));
+}
+:where(.dgr-editor-host[data-invalid]) {
+  border-color: var(--dgr-error-color, #dc2626);
+}
+/* Reset only built-in controls. Custom renderer descendants remain consumer-owned. */
+.dgr-editor-input {
+  margin: 0;
+  border: 0;
+  outline: none;
+  padding: var(--dgr-editor-padding, 5px 9px);
+  font: inherit;
+  line-height: 1.4;
+  background: transparent;
+  color: inherit;
+  border-radius: 0;
+}
+select.dgr-editor-input {
+  padding: var(--dgr-editor-padding, 4px 6px);
+}
+.dgr-editor-input option {
+  color: var(--dgr-text-color, #1c1917);
+  background: var(--dgr-editor-background, var(--dgr-background, #fff));
+}
+:where(.dgr-editor-error) {
+  padding: 4px 9px 6px;
+  border-top: 1px solid var(--dgr-error-color, #fecaca);
+  border-radius: 0 0 3px 3px;
+  font-size: 0.923em;
+  line-height: 1.4;
+  color: var(--dgr-error-color, #dc2626);
+  background: var(--dgr-error-background, #fef2f2);
+}
+.dgr-draft-discard {
+  margin: 0;
+  border: 1px solid var(--dgr-cell-border-color, #d6d3d1);
+  border-radius: 3px;
+  padding: 3px 8px;
+  font: inherit;
+  color: inherit;
+  background: var(--dgr-header-background, #f5f5f4);
+  cursor: pointer;
+}
+/* Width-neutral dividers overlay the adjacent zone. */
+:where(.dgr-zone[data-zone="left"], .dgr-row-gutter[data-divider]) {
+  box-shadow: 1px 0 0 0 var(--dgr-frozen-divider-color, #d6d3d1);
+}
+:where(.dgr-zone[data-zone="right"]) {
+  box-shadow: -1px 0 0 0 var(--dgr-frozen-divider-color, #d6d3d1);
+}
+
+/* Accessibility helpers have no geometry and do not duplicate cell content. */
+.dgr-semantic-rows {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.dgr-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* Logical cell focus survives virtualization. Do not use aria-activedescendant
+   here: it disappears when scrolling unmounts its target. */
+.dgr-scroller:focus-visible:not([data-has-focused-cell]) {
+  outline: 2px solid var(--dgr-focus-color, #2563eb);
+  outline-offset: -2px;
+}
+.dgr-editor-actions button:focus-visible {
+  outline: 2px solid var(--dgr-focus-color, #2563eb);
+  outline-offset: -2px;
+}
+.dgr-editor-host[data-default-editor] {
+  overflow: auto;
+}
+.dgr-editor-actions {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+}
+.dgr-editor-actions button {
+  min-height: 44px;
+  min-width: 44px;
+  font: inherit;
+}
+@media (forced-colors: active) {
+  .dgr-selection-range {
+    border: 2px solid Highlight;
+  }
+  .dgr-focus-ring {
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
+  }
+  .dgr-scroller:focus-visible:not([data-has-focused-cell]) {
+    outline-color: Highlight;
+  }
+  .dgr-editor-host,
+  .dgr-error-cell {
+    border: 2px solid CanvasText;
+  }
+  .dgr-resize-indicator,
+  .dgr-reorder-indicator {
+    background: Highlight;
+    forced-color-adjust: none;
+  }
+}
+.dgr-editor-actions button {
+  color: inherit;
+  background: var(--dgr-background, #fff);
+  border: 1px solid var(--dgr-frozen-divider-color, #d6d3d1);
+  border-radius: 4px;
+  padding: 6px 10px;
+}
+.dgr-checkbox-target {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
